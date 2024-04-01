@@ -31,7 +31,8 @@ int main() {
 
         //  Wait for next request from client
         socket.recv(request, zmq::recv_flags::none);
-        std::cout << "Received Hello" << std::endl;
+        std::string message_str(static_cast<char*>(request.data()), request.size());
+        std::cout << "Received Hello, content={" << message_str << "}" << std::endl;
 
         //  Do some 'work'
         sleep(1);
