@@ -9,7 +9,7 @@ int main () {
     // ports
     std::vector<std::string> server_addresses = {
             "tcp://10.128.0.42:5555",
-            "tcp://10.128.0.42:5555",
+            "tcp://10.128.0.43:5555",
     };
 
     // create context and socket

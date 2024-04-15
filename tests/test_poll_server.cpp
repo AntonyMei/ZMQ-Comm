@@ -11,19 +11,21 @@ int main(int argc, char *argv[]) {
         std::cerr << "Require port id on server!\n";
         return 1;
     }
-    std::string port_str = argv[1];
+    std::string ip_str = argv[1];
+    std::string port_str = argv[2];
+    auto address = "tcp://" + ip_str + ":" + port_str;
 
     // prepare context and socket
     zmq::context_t context(1);
     zmq::socket_t publisher(context, ZMQ_PUB);
-    publisher.bind("tcp://*:" + port_str);
-    std::cout << "This server is working on address: " << "tcp://*:" + port_str << "\n";
+    publisher.bind(address);
+    std::cout << "This server is working on address: " << address << "\n";
 
     // send messages
     int msg_id = 0;
     while (true) {
         // construct message
-        std::string cur_msg = "Hello from server " + port_str + ", msg id " + std::to_string(msg_id++);
+        std::string cur_msg = "Hello from server " + address + ", msg id " + std::to_string(msg_id++);
         zmq::message_t message(cur_msg.data(), cur_msg.size());
         publisher.send(message, zmq::send_flags::none);
 
