@@ -8,9 +8,8 @@
 int main () {
     // ports
     std::vector<std::string> server_addresses = {
-            "tcp://localhost:5555",
-            "tcp://localhost:5556",
-            "tcp://localhost:5557",
+            "tcp://10.128.0.42:5555",
+            "tcp://10.128.0.42:5555",
     };
 
     // create context and socket
