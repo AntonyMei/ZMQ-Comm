@@ -23,7 +23,8 @@ int main(int argc, char *argv[]) {
     while (true) {
         // construct message
         std::string cur_msg = "Hello from server " + address + ", msg id " + std::to_string(msg_id++);
-        server.send(cur_msg);
+        std::string time_msg = std::to_string(get_time());
+        server.send(cur_msg, time_msg);
 
         // Sleep for demonstration purposes
         std::this_thread::sleep_for(std::chrono::milliseconds(100));

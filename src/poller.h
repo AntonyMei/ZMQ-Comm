@@ -39,10 +39,14 @@ public:
         // process the result
         // TODO: change to real workload
         if (rc == 1) {
-            zmq::message_t message;
-            events[0].socket.recv(message, zmq::recv_flags::none);
-            std::string text(static_cast<char *>(message.data()), message.size());
-            std::cout << "Received: " << text << std::endl;
+            zmq::message_t message1, message2;
+            events[0].socket.recv(message1, zmq::recv_flags::none);
+            events[0].socket.recv(message2, zmq::recv_flags::none);
+            std::string text1(static_cast<char *>(message1.data()), message1.size());
+            std::string text2(static_cast<char *>(message2.data()), message2.size());
+            std::cout << "Received: " << text1 << " " << text2 << std::endl;
+            auto delta_t = get_time() - std::stol(text2);
+            std::cout << "Delta time (latency): " << delta_t << "us\n";
         }
     }
 
@@ -63,10 +67,12 @@ public:
         std::cout << "Sender bound to address: " << bind_address << "\n";
     }
 
-    void send(std::string &msg) {
+    void send(std::string &msg1, std::string &msg2) {
         // TODO: change to real workload
-        zmq::message_t message(msg.data(), msg.size());
-        publisher.send(message, zmq::send_flags::none);
+        zmq::message_t message1(msg1.data(), msg1.size());
+        zmq::message_t message2(msg2.data(), msg2.size());
+        publisher.send(message1, zmq::send_flags::sndmore);
+        publisher.send(message2, zmq::send_flags::none);
     }
 
 private:
