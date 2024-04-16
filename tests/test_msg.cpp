@@ -59,4 +59,14 @@ int main() {
     Assert(new_test_header.server_id[2] == 3, "Server id incorrect!");
     Assert(new_test_header.start_layer_idx[2] == 4, "Start layer idx incorrect!");
     Assert(new_test_header.end_layer_idx[2] == 6, "End layer idx incorrect!");
+
+    // message build time
+    constexpr size_t bufferSize = 16 * 1024;
+    std::vector<char> buffer(bufferSize, 'a');
+    start = get_time();
+    for (int i = 0; i < 1000; i++) {
+        zmq::message_t buffer_msg(buffer.data(), buffer.size());
+    }
+    end = get_time();
+    std::cout << "Message build time (ns): " << end - start << std::endl;
 }

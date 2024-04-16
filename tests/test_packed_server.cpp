@@ -20,14 +20,20 @@ int main(int argc, char *argv[]) {
 
     // send out messages
     int msg_id = 0;
+    constexpr size_t buffer_size = 16 * 1024;
+    std::vector<char> buffer(buffer_size, 'a');
     while (true) {
-        // construct message
-        std::string cur_msg = "Hello from server " + address + ", msg id " + std::to_string(msg_id++);
-        std::string time_msg = std::to_string(get_time());
-        server.send(cur_msg, time_msg);
+        // build header and buffer
+        Header header = Header(MsgType::Prompt);
+        header.add_stage(1, 0, 2);
+        header.add_stage(2, 2, 4);
+        zmq::message_t buffer_msg(buffer.data(), buffer.size());
+
+        // send through zmq
+        server.send(header, buffer_msg);
 
         // Sleep for demonstration purposes
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
 }

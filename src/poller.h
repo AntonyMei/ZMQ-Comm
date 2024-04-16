@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "utils.h"
+#include "msg.h"
 
 
 class PollingClient {
@@ -30,23 +31,25 @@ public:
         poller.add(subscriber, zmq::event_flags::pollin);
     }
 
-    void poll_once(int time_out = 10) {
+    Header poll_once(zmq::message_t &buffer_msg, int time_out = 10) {
+        // header will be returned
+        // buffer will be put into buffer_msg, access it with buffer_msg.data()
+
         // poll one message
         std::vector<zmq::poller_event<>> events(1);
         size_t rc = poller.wait_all(events, std::chrono::milliseconds(time_out));
         Assert(rc == 0 || rc == 1, "Bad receive count!");
 
         // process the result
-        // TODO: change to real workload
         if (rc == 1) {
-            zmq::message_t message1, message2;
-            events[0].socket.recv(message1, zmq::recv_flags::none);
-            events[0].socket.recv(message2, zmq::recv_flags::none);
-            std::string text1(static_cast<char *>(message1.data()), message1.size());
-            std::string text2(static_cast<char *>(message2.data()), message2.size());
-            std::cout << "Received: " << text1 << " " << text2 << std::endl;
-            auto delta_t = get_time() - std::stol(text2);
-            std::cout << "Delta time (latency): " << delta_t << "us\n";
+            zmq::message_t header_msg;
+            events[0].socket.recv(header_msg, zmq::recv_flags::none);
+            events[0].socket.recv(buffer_msg, zmq::recv_flags::none);
+            Header header = Header::deserialize(header_msg);
+            return header;
+        } else {
+            // return an empty header, indicating no message received
+            return {};
         }
     }
 
@@ -67,12 +70,12 @@ public:
         std::cout << "Sender bound to address: " << bind_address << "\n";
     }
 
-    void send(std::string &msg1, std::string &msg2) {
-        // TODO: change to real workload
-        zmq::message_t message1(msg1.data(), msg1.size());
-        zmq::message_t message2(msg2.data(), msg2.size());
-        publisher.send(message1, zmq::send_flags::sndmore);
-        publisher.send(message2, zmq::send_flags::none);
+    void send(const Header &header, zmq::message_t &buffer_msg) {
+        // header: header of the message
+        // buffer_msg: message content
+        zmq::message_t header_msg = header.serialize();
+        publisher.send(header_msg, zmq::send_flags::sndmore);
+        publisher.send(buffer_msg, zmq::send_flags::none);
     }
 
 private:
