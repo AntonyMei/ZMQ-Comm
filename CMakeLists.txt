@@ -9,6 +9,7 @@ add_executable(myx_poll_server tests/test_poll_server.cpp)
 add_executable(myx_poll_client tests/test_poll_client.cpp)
 add_executable(packed_server tests/test_packed_server.cpp)
 add_executable(packed_client tests/test_packed_client.cpp)
+add_executable(test_msg tests/test_msg.cpp)
 
 #find cppzmq wrapper, installed by make of cppzmq
 find_package(cppzmq)
@@ -18,3 +19,4 @@ target_link_libraries(myx_poll_server cppzmq)
 target_link_libraries(myx_poll_client cppzmq)
 target_link_libraries(packed_server cppzmq)
 target_link_libraries(packed_client cppzmq)
+target_link_libraries(test_msg cppzmq)
