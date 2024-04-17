@@ -17,6 +17,7 @@ int main() {
     std::cout << sizeof(header.server_id) << std::endl;
     std::cout << sizeof(header.start_layer_idx) << std::endl;
     std::cout << sizeof(header.end_layer_idx) << std::endl;
+    std::cout << sizeof(header.swarm_delta) << std::endl;
 
     // serialization and deserialization time
     auto start = get_time();

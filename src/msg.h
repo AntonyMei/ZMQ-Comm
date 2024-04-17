@@ -21,6 +21,8 @@ enum class MsgType {
     // running tasks
     Prompt = 2,
     Decode = 3,
+    // info
+    SwarmInfo = 4,
 };
 
 
@@ -63,6 +65,8 @@ public:
     int server_id[MAX_HOP]{};
     int start_layer_idx[MAX_HOP]{};
     int end_layer_idx[MAX_HOP]{};
+    // for info message only
+    float swarm_delta[MAX_HOP]{};
 };
 
 #endif //ZMQ_COMM_MSG_H
