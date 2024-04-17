@@ -6,8 +6,8 @@
 int main() {
     // ports and context
     std::vector<std::string> server_addresses = {
-            "tcp://10.128.0.42:5555",
-            "tcp://10.128.0.43:5555",
+            "tcp://10.128.0.47:5555",
+            "tcp://10.128.0.48:5555",
     };
 
     // initialize polling client

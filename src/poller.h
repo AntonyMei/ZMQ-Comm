@@ -43,8 +43,8 @@ public:
         // process the result
         if (rc == 1) {
             zmq::message_t header_msg;
-            events[0].socket.recv(header_msg, zmq::recv_flags::none);
-            events[0].socket.recv(buffer_msg, zmq::recv_flags::none);
+            auto _val_1 = events[0].socket.recv(header_msg, zmq::recv_flags::none);
+            auto _val_2 = events[0].socket.recv(buffer_msg, zmq::recv_flags::none);
             Header header = Header::deserialize(header_msg);
             return header;
         } else {

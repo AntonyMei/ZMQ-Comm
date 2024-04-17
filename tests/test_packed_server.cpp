@@ -25,6 +25,8 @@ int main(int argc, char *argv[]) {
     while (true) {
         // build header and buffer
         Header header = Header();
+        header.msg_type = MsgType::Prompt;
+        header.creation_time = get_time();
         header.add_stage(1, 0, 2);
         header.add_stage(2, 2, 4);
         zmq::message_t buffer_msg(buffer.data(), buffer.size());
