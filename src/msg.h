@@ -10,8 +10,8 @@
 #include <cstring>
 
 #include "utils.h"
+#include "const.h"
 
-#define MAX_HOP 16
 
 enum class MsgType {
     Invalid = 0,
@@ -23,6 +23,8 @@ enum class MsgType {
     Decode = 3,
     // info
     SwarmInfo = 4,
+    // termination
+    Terminate = 5,
 };
 
 
