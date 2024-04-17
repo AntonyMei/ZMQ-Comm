@@ -72,7 +72,6 @@ Header generate_random_header() {
     header.creation_time = get_time();
     // add random stages
     int total_stages = rand() % MAX_HOP;
-    std::cout << "Total stages: " << total_stages << std::endl;
     for (int i = 0; i < total_stages; i++) {
         header.add_stage(rand() % 10, rand() % 10, rand() % 10);
         header.swarm_delta[i] = rand() % 10;
