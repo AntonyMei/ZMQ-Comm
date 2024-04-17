@@ -10,5 +10,8 @@
 // msg
 #define MAX_HOP 16
 
+// flags
+#define DEBUG true
+
 
 #endif //ZMQ_COMM_CONST_H
