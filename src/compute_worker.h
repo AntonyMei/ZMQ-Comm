@@ -31,11 +31,11 @@ void receiver_thread(zmq::context_t &_context) {
         constexpr size_t buffer_size = 1600 * 1024;
         std::vector<char> buffer(buffer_size, 'a');
         zmq::message_t buffer_msg(buffer.data(), buffer.size());   // there is a copy here
-        Header header = Header();
-        header.creation_time = get_time();
-        header.add_stage(1, 0, 2);
-        header.add_stage(2, 2, 4);
+        Header header = generate_random_header();
         header.current_stage = counter++;
+        if (DEBUG) {
+            print_header("Receiver", header);
+        }
         // END TODO
 
         // send the header and buffer to compute thread
@@ -74,15 +74,13 @@ void sender_thread(zmq::context_t &_context) {
         std::vector<MessageData> messages = compute_send_queue.pop_all();
 
         // TODO: network sender (now we use some dummy workload to simulate the network sender)
-        if (!messages.empty() && DEBUG) {
-            auto cur_time = get_time();
-            log("Sender", "Received " + std::to_string(messages.size()) + " messages!");
+        if (DEBUG) {
+            auto finish_time = get_time();
             for (const auto &message: messages) {
-                auto delta = cur_time - message.header.creation_time;
-                log("Sender", "Comm time: " + std::to_string(delta) + " us " + "counter: " + std::to_string(message.header.current_stage));
+                auto delta_time = finish_time - message.header.creation_time;
+                std::cout << "Delta time: " << delta_time << " us\n";
+                print_header("Sender", message.header);
             }
-            Assert(last_counter + 1 == messages[0].header.current_stage, "Counter not increasing!");
-            last_counter = messages.back().header.current_stage;
         }
         // END TODO
     }

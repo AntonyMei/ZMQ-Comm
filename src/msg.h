@@ -66,4 +66,33 @@ public:
     float swarm_delta[MAX_HOP]{};
 };
 
+Header generate_random_header() {
+    Header header;
+    header.msg_type = MsgType::Prompt;
+    header.creation_time = get_time();
+    // add random stages
+    int total_stages = rand() % MAX_HOP;
+    std::cout << "Total stages: " << total_stages << std::endl;
+    for (int i = 0; i < total_stages; i++) {
+        header.add_stage(rand() % 10, rand() % 10, rand() % 10);
+        header.swarm_delta[i] = rand() % 10;
+    }
+    return header;
+}
+
+void print_header(const std::string& logger, const Header& header) {
+    std::cout << "[" << logger << "]\n";
+    std::cout << "msg_type: " << static_cast<int>(header.msg_type) << "\n";
+    std::cout << "creation_time: " << header.creation_time << "\n";
+    std::cout << "current_stage: " << header.current_stage << "\n";
+    std::cout << "total_stages: " << header.total_stages << "\n";
+    for (int i = 0; i < header.total_stages; i++) {
+        std::cout << "server_id[" << i << "]: " << header.server_id[i] << ", ";
+        std::cout << "start_layer_idx[" << i << "]: " << header.start_layer_idx[i] << ", ";
+        std::cout << "end_layer_idx[" << i << "]: " << header.end_layer_idx[i] << ", ";
+        std::cout << "swarm_delta[" << i << "]: " << header.swarm_delta[i] << "\n";
+    }
+    std::cout << std::endl;
+}
+
 #endif //ZMQ_COMM_MSG_H
