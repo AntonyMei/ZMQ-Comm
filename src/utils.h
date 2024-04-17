@@ -24,4 +24,8 @@ long get_time() {
     return microseconds;
 }
 
+void log(const std::string& logger, const std::string& msg) {
+    std::cout << "[" << logger << "] " << msg << "\n";
+}
+
 #endif //ZMQ_COMM_UTILS_H
