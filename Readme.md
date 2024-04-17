@@ -10,3 +10,6 @@
 3. PUB-SUB's filter happens on the publisher side
 4. Typically, we create one IO thread per GB/s.
 5. Inproc sockets can be used for communication between threads (very fast).
+
+## Solutions
+1. -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc (add this to pycharm cmake options)
