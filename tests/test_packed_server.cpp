@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
     std::vector<char> buffer(buffer_size, 'a');
     while (true) {
         // build header and buffer
-        Header header = Header(MsgType::Prompt);
+        Header header = Header();
         header.add_stage(1, 0, 2);
         header.add_stage(2, 2, 4);
         zmq::message_t buffer_msg(buffer.data(), buffer.size());

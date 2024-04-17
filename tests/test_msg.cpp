@@ -7,7 +7,7 @@
 
 int main() {
     // size check
-    auto header = Header(MsgType::Invalid);
+    auto header = Header();
     std::cout << sizeof(Header) << std::endl;
     std::cout << sizeof(header) << std::endl;
     std::cout << sizeof(header.msg_type) << std::endl;
@@ -31,7 +31,7 @@ int main() {
     std::cout << "Serialization and deserialization time (ns): " << (end - start) / 1000 << std::endl;
 
     // serialization and deserialization correctness
-    auto test_header = Header(MsgType::Init);
+    auto test_header = Header();
     test_header.add_stage(1, 0, 2);
     test_header.add_stage(2, 2, 4);
     test_header.add_stage(3, 4, 6);

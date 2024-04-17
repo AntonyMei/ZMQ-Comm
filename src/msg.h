@@ -32,11 +32,6 @@ class __attribute__((packed)) Header {
 public:
     Header() = default;
 
-    explicit Header(MsgType _msg_type) {
-        msg_type = _msg_type;
-        creation_time = get_time();
-    }
-
     void add_stage(int _server_id, int _start_layer_idx, int _end_layer_idx) {
         Assert(total_stages < MAX_HOP, "Too many stages!");
         server_id[total_stages] = _server_id;
