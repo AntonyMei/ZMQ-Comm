@@ -47,8 +47,8 @@ add_executable(test_msg tests/test_msg.cpp)
 target_link_libraries(test_msg cppzmq)
 
 # test compute worker
-add_executable(test_compute_worker tests/test_compute_worker.cpp)
-target_link_libraries(test_compute_worker cppzmq)
+#add_executable(test_compute_worker tests/test_compute_worker.cpp)
+#target_link_libraries(test_compute_worker cppzmq)
 
 # test cuda
 add_executable(test_torch tests/test_torch.cpp)
@@ -68,3 +68,13 @@ target_link_libraries(test_python_call PRIVATE ${TORCH_LIBRARIES})
 target_link_libraries(test_python_call PRIVATE ${torch_python_LIBRARY})
 target_link_libraries(test_python_call PRIVATE pybind11::pybind11)
 target_link_libraries(test_python_call PRIVATE pybind11::embed)
+
+# test c->py api
+pybind11_add_module(llm_sys MODULE src/api.cpp)
+target_include_directories(llm_sys PRIVATE ${TORCH_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS})
+target_link_libraries(llm_sys PRIVATE cppzmq)
+target_link_libraries(llm_sys PRIVATE ${PYTHON_LIBRARIES})
+target_link_libraries(llm_sys PRIVATE ${TORCH_LIBRARIES})
+target_link_libraries(llm_sys PRIVATE ${torch_python_LIBRARY})
+target_link_libraries(llm_sys PRIVATE pybind11::pybind11)
+target_link_libraries(llm_sys PRIVATE pybind11::embed)

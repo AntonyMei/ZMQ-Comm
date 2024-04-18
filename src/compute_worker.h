@@ -86,20 +86,5 @@ void sender_thread(zmq::context_t &_context) {
     }
 }
 
-void run_compute_worker() {
-    // initialize zmq context
-    zmq::context_t context(1);
-
-    // Creating three threads
-    std::thread t1(receiver_thread, std::ref(context));
-    std::thread t2(compute_thread, std::ref(context));
-    std::thread t3(sender_thread, std::ref(context));
-
-    // Joining all threads with the main thread
-    t1.join();
-    t2.join();
-    t3.join();
-}
-
 
 #endif //ZMQ_COMM_COMPUTE_WORKER_H
