@@ -58,3 +58,13 @@ target_link_libraries(test_torch PRIVATE ${PYTHON_LIBRARIES})
 target_link_libraries(test_torch PRIVATE ${TORCH_LIBRARIES})
 target_link_libraries(test_torch PRIVATE ${torch_python_LIBRARY})
 target_link_libraries(test_torch PRIVATE pybind11::pybind11)
+
+# test python call
+pybind11_add_module(test_python_call MODULE tests/test_python_call.cpp)
+target_include_directories(test_python_call PRIVATE ${TORCH_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS})
+target_link_libraries(test_python_call PRIVATE cppzmq)
+target_link_libraries(test_python_call PRIVATE ${PYTHON_LIBRARIES})
+target_link_libraries(test_python_call PRIVATE ${TORCH_LIBRARIES})
+target_link_libraries(test_python_call PRIVATE ${torch_python_LIBRARY})
+target_link_libraries(test_python_call PRIVATE pybind11::pybind11)
+target_link_libraries(test_python_call PRIVATE pybind11::embed)
