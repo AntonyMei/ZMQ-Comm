@@ -9,12 +9,19 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 include_directories(${Python3_INCLUDE_DIRS})
 link_libraries(${Python3_LIBRARIES})
 
+# Find the pybind11 package
+# Note: "sudo apt-get install pybind11-dev" if not found
+find_package(pybind11 REQUIRED)
+
 # Find the PyTorch package
 # Note: This is torch.utils.cmake_prefix_path in python.
 list(APPEND CMAKE_PREFIX_PATH "/home/meiyixuan2000/miniconda3/envs/llm/lib/python3.10/site-packages/torch/share/cmake")
 find_package(Torch REQUIRED)
 
-# cpp zmq
+# Find libtorch_python.so, this is not included in the torch package by default
+find_library(torch_python_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib")
+
+# Find cppzmq
 find_package(cppzmq)
 
 # server test
@@ -45,6 +52,9 @@ target_link_libraries(test_compute_worker cppzmq)
 
 # test cuda
 add_executable(test_cuda tests/test_cuda.cpp)
-target_link_libraries(test_cuda cppzmq)
-target_link_libraries(test_cuda "${TORCH_LIBRARIES}")
-target_include_directories(test_cuda PRIVATE ${TORCH_INCLUDE_DIRS})
+target_include_directories(test_cuda PRIVATE ${TORCH_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS})
+target_link_libraries(test_cuda PRIVATE cppzmq)
+target_link_libraries(test_cuda PRIVATE ${PYTHON_LIBRARIES})
+target_link_libraries(test_cuda PRIVATE ${TORCH_LIBRARIES})
+target_link_libraries(test_cuda PRIVATE ${torch_python_LIBRARY})
+target_link_libraries(test_cuda PRIVATE pybind11::pybind11)
