@@ -22,7 +22,7 @@ void call_python_function(const torch::Tensor& tensor) {
     std::cout << "Python function successfully loaded." << std::endl;
 
     // convert the tensor
-    // Calling takes 13 us
+    // Calling takes 13 us (no copy, so independent of tensor size)
     auto start = get_time();
     py::object py_tensor = py::cast(tensor);
     py::object result = proc_func(py_tensor);
@@ -35,7 +35,7 @@ void call_python_function(const torch::Tensor& tensor) {
 
 int main() {
     // create a buffer
-    constexpr size_t buffer_size = 16;
+    constexpr size_t buffer_size = 8192 * 2 * 1000;
     std::vector<char> buffer(buffer_size, 'a');
 
     // Create a CPU tensor from the buffer
