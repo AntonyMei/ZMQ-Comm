@@ -7,6 +7,8 @@
 #include <torch/extension.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/embed.h>
+#include <zmq.hpp>
+#include <c10/util/Half.h>
 
 #include "../src/utils.h"
 
@@ -37,13 +39,17 @@ int main() {
     // create a buffer
     constexpr size_t buffer_size = 8192 * 2 * 1000;
     std::vector<char> buffer(buffer_size, 'a');
+    zmq::message_t buffer_msg(buffer.data(), buffer.size());
 
     // Create a CPU tensor from the buffer
+    // 80us for 8192 * 2 * 1000
     auto start = get_time();
     auto options = torch::TensorOptions().dtype(torch::kFloat16);
-    torch::Tensor tensor = torch::from_blob(buffer.data(), (int)buffer.size() / 2, options);
+    auto* data = static_cast<c10::Half*>(buffer_msg.data());
+    torch::Tensor tensor = torch::from_blob(data, (int)(buffer_msg.size() / 2), options);
     auto end = get_time();
     std::cout << "Tensor creation time: " << end - start << " us\n";
+    std::cout << "Tensor size: " << tensor.numel() << std::endl;
     std::cout << "Tensor successfully built on cpp side." << std::endl;
 
     // call the python function
