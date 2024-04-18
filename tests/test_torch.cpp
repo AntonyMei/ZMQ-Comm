@@ -39,8 +39,11 @@ int main() {
     std::vector<char> buffer(buffer_size, 'a');
 
     // Create a CPU tensor from the buffer
+    auto start = get_time();
     auto options = torch::TensorOptions().dtype(torch::kFloat16);
     torch::Tensor tensor = torch::from_blob(buffer.data(), (int)buffer.size() / 2, options);
+    auto end = get_time();
+    std::cout << "Tensor creation time: " << end - start << " us\n";
     std::cout << "Tensor successfully built on cpp side." << std::endl;
 
     // call the python function
