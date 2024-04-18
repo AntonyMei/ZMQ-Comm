@@ -40,7 +40,7 @@ public:
         total_stages += 1;
     }
 
-    zmq::message_t serialize() const {
+    [[nodiscard]] zmq::message_t serialize() const {
         zmq::message_t message(sizeof(Header));
         std::memcpy(message.data(), this, sizeof(Header));
         return message;
@@ -53,9 +53,13 @@ public:
     }
 
 public:
-    // msg type
+    // basic message info
     MsgType msg_type = MsgType::Invalid;
     long creation_time = 0;
+    int request_id = 0;
+    // request info
+    int num_tokens = 0;   // for prompt = token number, for decode = context size
+    int max_tokens = 0;   // max number of tokens to generate, when reaching this we will force cut
     // routing data
     int current_stage = 0;
     int total_stages = 0;
@@ -70,6 +74,9 @@ Header generate_random_header() {
     Header header;
     header.msg_type = MsgType::Prompt;
     header.creation_time = get_time();
+    header.request_id = rand() % 100;
+    header.num_tokens = rand() % 100;
+    header.max_tokens = rand() % 100;
     // add random stages
     int total_stages = rand() % MAX_HOP;
     for (int i = 0; i < total_stages; i++) {
@@ -83,6 +90,9 @@ void print_header(const std::string& logger, const Header& header) {
     std::cout << "[" << logger << "]\n";
     std::cout << "msg_type: " << static_cast<int>(header.msg_type) << "\n";
     std::cout << "creation_time: " << header.creation_time << "\n";
+    std::cout << "request_id: " << header.request_id << "\n";
+    std::cout << "num_tokens: " << header.num_tokens << "\n";
+    std::cout << "max_tokens: " << header.max_tokens << "\n";
     std::cout << "current_stage: " << header.current_stage << "\n";
     std::cout << "total_stages: " << header.total_stages << "\n";
     for (int i = 0; i < header.total_stages; i++) {

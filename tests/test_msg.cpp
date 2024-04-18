@@ -12,6 +12,9 @@ int main() {
     std::cout << sizeof(header) << std::endl;
     std::cout << sizeof(header.msg_type) << std::endl;
     std::cout << sizeof(header.creation_time) << std::endl;
+    std::cout << sizeof(header.request_id) << std::endl;
+    std::cout << sizeof(header.num_tokens) << std::endl;
+    std::cout << sizeof(header.max_tokens) << std::endl;
     std::cout << sizeof(header.current_stage) << std::endl;
     std::cout << sizeof(header.total_stages) << std::endl;
     std::cout << sizeof(header.server_id) << std::endl;
@@ -47,7 +50,7 @@ int main() {
     }
 
     // check the correctness of the header
-    Assert(new_test_header.msg_type == MsgType::Init, "Msg type incorrect!");
+    Assert(new_test_header.msg_type == MsgType::Invalid, "Msg type incorrect!");
     Assert(new_test_header.creation_time == test_header.creation_time, "Creation time incorrect!");
     Assert(new_test_header.current_stage == 0, "Current stage incorrect!");
     Assert(new_test_header.total_stages == 3, "Total stages incorrect!");
