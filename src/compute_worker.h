@@ -16,10 +16,12 @@
 #include "msg.h"
 #include "inproc_queue.h"
 
-
+// global queue
+bool network_initialized = false;
 ThreadSafeQueue<MessageData> recv_compute_queue;
 ThreadSafeQueue<MessageData> compute_send_queue;
 
+// flying batch
 bool exist_flying_batch = false;
 std::vector<MessageData> flying_batch;
 
@@ -38,7 +40,7 @@ void receiver_thread(zmq::context_t &_context) {
         zmq::message_t buffer_msg(buffer.data(), buffer.size());   // there is a copy here
         Header header = generate_random_header();
         header.current_stage = counter++;
-        if (counter == 32) {
+        if (counter == 33) {
             break;
         }
         // END TODO
@@ -49,7 +51,9 @@ void receiver_thread(zmq::context_t &_context) {
     }
 }
 
+
 // compute - step 1: fetch
+// Return value: List[Torch.Tensor]
 std::vector<torch::Tensor> fetch_new_requests() {
     // read all messages from the receiver
     std::vector<MessageData> messages = recv_compute_queue.pop_all();
@@ -66,12 +70,15 @@ std::vector<torch::Tensor> fetch_new_requests() {
 
     // save the flying batch
     Assert(!exist_flying_batch, "There is already a flying batch!");
-    flying_batch = std::move(messages);
-    exist_flying_batch = true;
+    if (!messages.empty()) {
+        flying_batch = std::move(messages);
+        exist_flying_batch = true;
+    }
 
     // return the tensors
     return std::move(tensors);
 }
+
 
 // compute
 void compute_thread(zmq::context_t &_context) {
@@ -92,6 +99,7 @@ void compute_thread(zmq::context_t &_context) {
         }
     }
 }
+
 
 // sender
 void sender_thread(zmq::context_t &_context) {

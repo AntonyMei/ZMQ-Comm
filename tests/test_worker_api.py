@@ -14,6 +14,7 @@ def main():
     llm_sys.worker_start_network_threads()
     time.sleep(5)
     res = llm_sys.worker_fetch_new_requests()
+    print(res)
 
 
 if __name__ == '__main__':

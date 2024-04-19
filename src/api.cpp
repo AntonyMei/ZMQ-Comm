@@ -10,6 +10,10 @@
 
 
 void worker_start_network_threads() {
+    // check that network is not initialized
+    Assert(!network_initialized, "Network threads have already been initialized!");
+    network_initialized = true;
+
     // initialize zmq context
     zmq::context_t context(1);
 
