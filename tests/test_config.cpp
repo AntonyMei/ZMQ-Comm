@@ -24,5 +24,13 @@ int main() {
         print_machine(deserialized);
     }
 
+    // test serialization and deserialization of a vector of machines
+    std::cout << "Testing serialization and deserialization of a vector of machines" << std::endl;
+    std::string serialized = serialize_vector_of_machines(machines);
+    std::vector<Machine> deserialized = deserialize_vector_of_machines(serialized);
+    for (const auto &m: deserialized) {
+        print_machine(m);
+    }
+
     return 0;
 }

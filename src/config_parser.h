@@ -171,5 +171,44 @@ Machine deserialize_machine(const std::string& data) {
     return machine;
 }
 
+std::string serialize_vector_of_machines(const std::vector<Machine>& machines) {
+    std::ostringstream oss(std::ios::binary);
+
+    // Serialize the size of the vector
+    size_t num_machines = machines.size();
+    oss.write(reinterpret_cast<const char*>(&num_machines), sizeof(num_machines));
+
+    // Serialize each machine
+    for (const auto& machine : machines) {
+        std::string machine_data = serialize_machine(machine);
+        size_t machine_size = machine_data.size();
+        oss.write(reinterpret_cast<const char*>(&machine_size), sizeof(machine_size));
+        oss.write(machine_data.data(), (int)machine_size);
+    }
+
+    return oss.str();
+}
+
+std::vector<Machine> deserialize_vector_of_machines(const std::string& data) {
+    std::istringstream iss(data, std::ios::binary);
+    std::vector<Machine> machines;
+
+    // Deserialize the size of the vector
+    size_t num_machines;
+    iss.read(reinterpret_cast<char*>(&num_machines), sizeof(num_machines));
+
+    // Deserialize each machine
+    for (size_t i = 0; i < num_machines; ++i) {
+        size_t machine_size;
+        iss.read(reinterpret_cast<char*>(&machine_size), sizeof(machine_size));
+        std::vector<char> machine_data(machine_size);
+        iss.read(machine_data.data(), (int)machine_size);
+        machines.push_back(deserialize_machine(std::string(machine_data.begin(), machine_data.end())));
+    }
+
+    return machines;
+}
+
+
 
 #endif //ZMQ_COMM_CONFIG_PARSER_H
