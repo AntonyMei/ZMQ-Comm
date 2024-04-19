@@ -17,6 +17,7 @@
 #include "inproc_queue.h"
 
 // global queue
+zmq::context_t context(1);
 bool network_initialized = false;
 ThreadSafeQueue<MessageData> recv_compute_queue;
 ThreadSafeQueue<MessageData> compute_send_queue;
@@ -30,9 +31,24 @@ ThreadSafeQueue<std::shared_ptr<torch::Tensor>> tensors_to_release;
 
 
 // receiver
-void receiver_thread(zmq::context_t &_context) {
+void receiver_thread(const std::string &host_addr, const std::string &self_ip) {
     // initialize
     log("Receiver", "Receiver thread has successfully started!");
+
+    // get configuration from host
+    zmq::socket_t init_socket(context, zmq::socket_type::req);
+    init_socket.connect(host_addr);
+    zmq::message_t init_msg(self_ip.data(), self_ip.size());
+    zmq::message_t init_reply_msg;
+    init_socket.send(init_msg, zmq::send_flags::none);
+    auto rc = init_socket.recv(init_reply_msg, zmq::recv_flags::none);
+    Assert(rc.has_value(), "Failed to receive the initialization message!");
+
+    // print the initialization message
+    // TODO: dummy
+    std::string init_reply_str(static_cast<char *>(init_reply_msg.data()), init_reply_msg.size());
+    std::cout << "Initialization message: " << init_reply_str << std::endl;
+
 
     int counter = 0;
     while (true) {
@@ -140,7 +156,7 @@ void submit_requests(std::vector<int> &request_ids,
         message->header.current_stage += 1;
 
         // build new zmq message
-        auto* start_ptr = result_tensor.data_ptr<c10::Half>() + offset;
+        auto *start_ptr = result_tensor.data_ptr<c10::Half>() + offset;
         zmq::message_t new_buf_msg(start_ptr, length * result_tensor.element_size(), custom_free, nullptr);
         auto new_message = MessageData(message->header, std::move(new_buf_msg));
 
@@ -201,7 +217,7 @@ void tensor_gc() {
 
 
 // sender
-void sender_thread(zmq::context_t &_context) {
+void sender_thread(const std::string &host_addr, const std::string &self_ip) {
     log("Sender", "Sender thread has successfully started!");
 
     while (true) {
@@ -220,6 +236,33 @@ void sender_thread(zmq::context_t &_context) {
         }
         // END TODO
     }
+}
+
+
+void worker_start_network_threads(const std::string &host_addr, const std::string &self_ip) {
+    // host_addr format: "tcp://10.128.0.53:5000"
+    // self_ip format: "10.128.0.53"
+    std::cout << "Host connection address: " << host_addr << std::endl;
+    std::cout << "Self IP address (local): " << self_ip << std::endl;
+
+    // check that network is not initialized
+    Assert(!network_initialized, "Network threads have already been initialized!");
+    network_initialized = true;
+
+    // creating threads
+    std::thread t1(receiver_thread, host_addr, self_ip);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::thread t2(sender_thread, host_addr, self_ip);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::thread gc_thread1(message_gc);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::thread gc_thread2(tensor_gc);
+
+    // detach from the main threads to avoid crash
+    t1.detach();
+    t2.detach();
+    gc_thread1.detach();
+    gc_thread2.detach();
 }
 
 
