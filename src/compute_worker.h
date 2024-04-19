@@ -21,9 +21,8 @@ bool network_initialized = false;
 ThreadSafeQueue<MessageData> recv_compute_queue;
 ThreadSafeQueue<MessageData> compute_send_queue;
 
-// since we need two function calls to
-bool exist_flying_batch = false;
-std::vector<MessageData> flying_batch;
+// the requests that are in compute
+std::unordered_map<int, std::shared_ptr<MessageData>> requests_on_the_fly;
 
 
 // receiver
@@ -94,10 +93,10 @@ std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<in
     }
 
     // save the flying batch
-    Assert(!exist_flying_batch, "There is already a flying batch!");
-    if (!messages.empty()) {
-        flying_batch = std::move(messages);
-        exist_flying_batch = true;
+    for (auto &message: messages) {
+        auto request_id = message.header.request_id;
+        Assert(requests_on_the_fly.find(request_id) == requests_on_the_fly.end(), "Request already exists!");
+        requests_on_the_fly[request_id] = std::make_shared<MessageData>(std::move(message));
     }
 
     // return the tensors
