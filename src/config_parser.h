@@ -19,6 +19,8 @@ struct Machine {
     std::string ip_address;
     std::vector<int> in_nodes;
     std::vector<int> out_nodes;
+    int start_layer = -1;
+    int end_layer = -1;
 };
 
 // Trim from start (in place)
@@ -43,6 +45,7 @@ static inline void trim(std::string &s) {
 
 void print_machine(const Machine &m) {
     std::cout << "Machine ID: [" << m.machine_id << "], IP: [" << m.ip_address << "]" << std::endl;
+    std::cout << "Start Layer: " << m.start_layer << ", End Layer: " << m.end_layer << std::endl;
     std::cout << "In Nodes: ";
     for (int in: m.in_nodes) std::cout << in << " ";
     std::cout << std::endl << "Out Nodes: ";
@@ -91,6 +94,10 @@ std::vector<Machine> read_config(const std::string &filename) {
                 machine.out_nodes.push_back(id);
                 if (ss.peek() == ',') ss.ignore();
             }
+        } else if (key.find("start_layer") != std::string::npos) {
+            machine.start_layer = std::stoi(val);
+        } else if (key.find("end_layer") != std::string::npos) {
+            machine.end_layer = std::stoi(val);
         }
     }
 
@@ -99,6 +106,69 @@ std::vector<Machine> read_config(const std::string &filename) {
     }
 
     return machines;
+}
+
+// Serialize a Machine object to a binary stream
+std::string serialize_machine(const Machine& machine) {
+    std::ostringstream oss(std::ios::binary);
+
+    // Serialize machine_id
+    oss.write(reinterpret_cast<const char*>(&machine.machine_id), sizeof(machine.machine_id));
+    oss.write(reinterpret_cast<const char*>(&machine.start_layer), sizeof(machine.start_layer));
+    oss.write(reinterpret_cast<const char*>(&machine.end_layer), sizeof(machine.end_layer));
+
+    // Serialize ip_address
+    size_t ip_length = machine.ip_address.size();
+    oss.write(reinterpret_cast<const char*>(&ip_length), sizeof(ip_length));
+    oss.write(machine.ip_address.data(), (int)ip_length);
+
+    // Helper function to serialize vector of ints
+    auto serialize_vector = [&oss](const std::vector<int>& vec) {
+        size_t vec_size = vec.size();
+        oss.write(reinterpret_cast<const char*>(&vec_size), sizeof(vec_size));
+        for (int value : vec) {
+            oss.write(reinterpret_cast<const char*>(&value), sizeof(value));
+        }
+    };
+
+    // Serialize in_nodes and out_nodes
+    serialize_vector(machine.in_nodes);
+    serialize_vector(machine.out_nodes);
+
+    return oss.str();
+}
+
+// Deserialize a Machine object from a binary stream
+Machine deserialize_machine(const std::string& data) {
+    std::istringstream iss(data, std::ios::binary);
+    Machine machine;
+
+    // Deserialize machine_id
+    iss.read(reinterpret_cast<char*>(&machine.machine_id), sizeof(machine.machine_id));
+    iss.read(reinterpret_cast<char*>(&machine.start_layer), sizeof(machine.start_layer));
+    iss.read(reinterpret_cast<char*>(&machine.end_layer), sizeof(machine.end_layer));
+
+    // Deserialize ip_address
+    size_t ip_length;
+    iss.read(reinterpret_cast<char*>(&ip_length), sizeof(ip_length));
+    machine.ip_address.resize(ip_length);
+    iss.read(&machine.ip_address[0], (int)ip_length);
+
+    // Helper function to deserialize vector of ints
+    auto deserialize_vector = [&iss](std::vector<int>& vec) {
+        size_t vec_size;
+        iss.read(reinterpret_cast<char*>(&vec_size), sizeof(vec_size));
+        vec.resize(vec_size);
+        for (size_t i = 0; i < vec_size; ++i) {
+            iss.read(reinterpret_cast<char*>(&vec[i]), sizeof(int));
+        }
+    };
+
+    // Deserialize in_nodes and out_nodes
+    deserialize_vector(machine.in_nodes);
+    deserialize_vector(machine.out_nodes);
+
+    return machine;
 }
 
 
