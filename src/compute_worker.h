@@ -24,6 +24,10 @@ ThreadSafeQueue<MessageData> compute_send_queue;
 // the requests that are in compute
 std::unordered_map<int, std::shared_ptr<MessageData>> requests_on_the_fly;
 
+// hold the output tensor to avoid releasing the memory
+std::deque<std::shared_ptr<torch::Tensor>> output_tensors_on_hold;
+std::deque<long> hold_time;
+
 
 // receiver
 void receiver_thread(zmq::context_t &_context) {
@@ -39,7 +43,7 @@ void receiver_thread(zmq::context_t &_context) {
         zmq::message_t buffer_msg(buffer.data(), buffer.size());   // there is a copy here
         Header header = generate_random_header();
         header.request_id = counter++;
-        if (counter == 33) {
+        if (counter == 3) {
             break;
         }
         // END TODO
@@ -105,23 +109,45 @@ std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<in
 }
 
 
-// compute
-void compute_thread(zmq::context_t &_context) {
-    // initialize
-    log("Compute", "Compute thread has successfully started!");
+// Compute - step 2: submit
+// Args:
+//  1. request_ids: List[int]
+//  2. offsets: List[int] (in number of fp16 elements)
+//  3. lengths: List[int] (in number of fp16 elements)
+//  4. result_tensor: Torch.Tensor (a cpu tensor)
+void submit_requests(std::vector<int> &request_ids,
+                     std::vector<int> &offsets,
+                     std::vector<int> &lengths,
+                     torch::Tensor &result_tensor) {
+    Assert(request_ids.size() == offsets.size() && offsets.size() == lengths.size(),
+           "Request ids, offsets, and lengths should have the same size!");
+    size_t submit_num = request_ids.size();
 
-    while (true) {
-        // receive all messages from the network receiver thread
-        std::vector<MessageData> messages = recv_compute_queue.pop_all();
+    // hold the output tensor
+    output_tensors_on_hold.emplace_back(std::make_shared<torch::Tensor>(result_tensor));
+    hold_time.emplace_back(get_time());
 
-        // TODO: compute (now we use some dummy workload to simulate the compute)
-        std::vector<MessageData> new_messages = std::move(messages);
-        // END TODO
+    // fetch the requests from the flying batch
+    for (size_t i = 0; i < submit_num; i++) {
+        // get basic info
+        auto request_id = request_ids[i];
+        auto offset = offsets[i];
+        auto length = lengths[i];
 
-        // send the processed message to the network sender thread
-        for (auto &message: new_messages) {
-            compute_send_queue.push(std::move(message));
-        }
+        // get the message and remove it from the flying batch
+        auto message = requests_on_the_fly[request_id];
+        requests_on_the_fly.erase(request_id);
+
+        // update the header
+        message->header.current_stage += 1;
+
+        // build new zmq message
+        auto* start_ptr = result_tensor.data_ptr<c10::Half>() + offset;
+        zmq::message_t new_buf_msg(start_ptr, length * result_tensor.element_size(), custom_free, nullptr);
+        auto new_message = MessageData(message->header, std::move(new_buf_msg));
+
+        // send the message to the compute thread
+        compute_send_queue.push(std::move(new_message));
     }
 }
 
@@ -130,7 +156,6 @@ void compute_thread(zmq::context_t &_context) {
 void sender_thread(zmq::context_t &_context) {
     log("Sender", "Sender thread has successfully started!");
 
-    int last_counter = -1;
     while (true) {
         // receive all messages from the compute thread
         std::vector<MessageData> messages = compute_send_queue.pop_all();
@@ -140,11 +165,20 @@ void sender_thread(zmq::context_t &_context) {
             auto finish_time = get_time();
             for (const auto &message: messages) {
                 auto delta_time = finish_time - message.header.creation_time;
+                std::cout << "Request id: " << message.header.request_id << "\n";
                 std::cout << "Delta time: " << delta_time << " us\n";
                 print_header("Sender", message.header);
             }
         }
         // END TODO
+
+        // clean up on hold tensors
+        auto current_time = get_time();
+        while (!hold_time.empty() && current_time - hold_time.front() > 10 * 1000 * 1000) {
+            output_tensors_on_hold.pop_front();
+            hold_time.pop_front();
+            std::cout << "Clean up one tensor on hold\n";
+        }
     }
 }
 

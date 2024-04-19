@@ -28,4 +28,9 @@ void log(const std::string& logger, const std::string& msg) {
     std::cout << "[" << logger << "] " << msg << "\n";
 }
 
+void custom_free(void* data, void* hint) {
+    // No operation; memory managed elsewhere
+    // used to avoid zmq copy in message creation
+}
+
 #endif //ZMQ_COMM_UTILS_H

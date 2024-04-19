@@ -30,7 +30,9 @@ PYBIND11_MODULE(llm_sys, m) {
     m.doc() = "LLM system";
     // Worker functions
     // Step 0: start network threads
-    // Step 1: fetch new requests (only the list of tensors is returned, the header is not returned)
     m.def("worker_start_network_threads", &worker_start_network_threads, "Compute worker: start network threads.");
-    m.def("worker_fetch_new_requests", &fetch_new_requests, "Compute worker: fetch new requests from queue.");
+    // Step 1: fetch new requests
+    m.def("worker_fetch_new_requests", &fetch_new_requests, "Compute worker: fetch new requests from receiver.");
+    // Step 2: submit results
+    m.def("worker_submit_requests", &submit_requests, "Compute worker: submit results to sender.");
 }
