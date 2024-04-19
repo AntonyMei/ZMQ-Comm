@@ -8,6 +8,8 @@
 #include <iostream>
 #include <thread>
 #include <zmq.hpp>
+#include <torch/torch.h>
+#include <torch/extension.h>
 
 #include "utils.h"
 #include "const.h"
@@ -18,6 +20,9 @@
 ThreadSafeQueue<MessageData> recv_compute_queue;
 ThreadSafeQueue<MessageData> compute_send_queue;
 
+bool exist_flying_batch = false;
+std::vector<MessageData> flying_batch;
+
 
 // receiver
 void receiver_thread(zmq::context_t &_context) {
@@ -27,14 +32,14 @@ void receiver_thread(zmq::context_t &_context) {
     int counter = 0;
     while (true) {
         // TODO: network receiver (now we use some dummy workload to simulate the network receiver)
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        constexpr size_t buffer_size = 1600 * 1024;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        constexpr size_t buffer_size = 8192 * 2;
         std::vector<char> buffer(buffer_size, 'a');
         zmq::message_t buffer_msg(buffer.data(), buffer.size());   // there is a copy here
         Header header = generate_random_header();
         header.current_stage = counter++;
-        if (DEBUG) {
-            print_header("Receiver", header);
+        if (counter == 32) {
+            break;
         }
         // END TODO
 
@@ -42,6 +47,30 @@ void receiver_thread(zmq::context_t &_context) {
         zmq::message_t header_msg = header.serialize();
         recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
     }
+}
+
+// compute - step 1: fetch
+std::vector<torch::Tensor> fetch_new_requests() {
+    // read all messages from the receiver
+    std::vector<MessageData> messages = recv_compute_queue.pop_all();
+
+    // process the messages into torch tensors
+    std::vector<torch::Tensor> tensors;
+    auto options = torch::TensorOptions().dtype(torch::kFloat16);
+    for (auto &message: messages) {
+        auto *data = static_cast<c10::Half *>(message.buffer_msg.data());
+        auto length = static_cast<int>(message.buffer_msg.size() / 2);
+        torch::Tensor tensor = torch::from_blob(data, {length}, options);
+        tensors.emplace_back(std::move(tensor));
+    }
+
+    // save the flying batch
+    Assert(!exist_flying_batch, "There is already a flying batch!");
+    flying_batch = std::move(messages);
+    exist_flying_batch = true;
+
+    // return the tensors
+    return std::move(tensors);
 }
 
 // compute
