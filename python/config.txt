@@ -1,34 +1,20 @@
 machine_id: 0
-ip_address: 192.168.111.10
-in_nodes: 3 4
-out_nodes: 1 2
+ip_address: 10.128.0.53
+in_nodes: 2
+out_nodes: 1
 start_layer: -1
 end_layer: -1
 
 machine_id: 1
-ip_address: 192.168.12.11
+ip_address: 10.128.0.63
 in_nodes: 0
-out_nodes: 3 4
+out_nodes: 2
 start_layer: 0
 end_layer: 2
 
 machine_id: 2
-ip_address: 192.168.1.12
-in_nodes: 0
-out_nodes: 3 4
+ip_address: 10.128.15.192
+in_nodes: 1
+out_nodes: 0
 start_layer: 0
 end_layer: 2
-
-machine_id: 3
-ip_address: 192.168.1.131
-in_nodes: 1 2
-out_nodes: 0
-start_layer: 2
-end_layer: 4
-
-machine_id: 4
-ip_address: 192.168.1.14
-in_nodes: 1 2
-out_nodes: 0
-start_layer: 2
-end_layer: 4
