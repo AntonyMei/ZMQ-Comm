@@ -21,7 +21,7 @@ bool network_initialized = false;
 ThreadSafeQueue<MessageData> recv_compute_queue;
 ThreadSafeQueue<MessageData> compute_send_queue;
 
-// flying batch
+// since we need two function calls to
 bool exist_flying_batch = false;
 std::vector<MessageData> flying_batch;
 
@@ -35,11 +35,11 @@ void receiver_thread(zmq::context_t &_context) {
     while (true) {
         // TODO: network receiver (now we use some dummy workload to simulate the network receiver)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        constexpr size_t buffer_size = 8192 * 2;
+        constexpr size_t buffer_size = 8192 * 2 * 1000;
         std::vector<char> buffer(buffer_size, 'a');
         zmq::message_t buffer_msg(buffer.data(), buffer.size());   // there is a copy here
         Header header = generate_random_header();
-        header.current_stage = counter++;
+        header.request_id = counter++;
         if (counter == 33) {
             break;
         }
@@ -53,8 +53,17 @@ void receiver_thread(zmq::context_t &_context) {
 
 
 // compute - step 1: fetch
-// Return value: List[Torch.Tensor]
-std::vector<torch::Tensor> fetch_new_requests() {
+// Return values:
+//  1. request_ids: List[int]
+//  2. is_prompt: List[bool]
+//  3. start_layer_idx: List[int]
+//  4. end_layer_idx: List[int]
+//  5. num_tokens: List[int]
+//  6. max_tokens: List[int]
+//  7. tensors: List[Torch.Tensor]
+std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<int>, std::vector<int>,
+        std::vector<int>, std::vector<torch::Tensor>> fetch_new_requests() {
+    // TODO: process special messages
     // read all messages from the receiver
     std::vector<MessageData> messages = recv_compute_queue.pop_all();
 
@@ -68,6 +77,22 @@ std::vector<torch::Tensor> fetch_new_requests() {
         tensors.emplace_back(std::move(tensor));
     }
 
+    // process the header
+    std::vector<int> request_ids;
+    std::vector<bool> is_prompt;
+    std::vector<int> start_layer_idx;
+    std::vector<int> end_layer_idx;
+    std::vector<int> num_tokens;
+    std::vector<int> max_tokens;
+    for (const auto &message: messages) {
+        request_ids.emplace_back(message.header.request_id);
+        is_prompt.emplace_back(message.header.msg_type == MsgType::Prompt);
+        start_layer_idx.emplace_back(message.header.start_layer_idx[message.header.current_stage]);
+        end_layer_idx.emplace_back(message.header.end_layer_idx[message.header.current_stage]);
+        num_tokens.emplace_back(message.header.num_tokens);
+        max_tokens.emplace_back(message.header.max_tokens);
+    }
+
     // save the flying batch
     Assert(!exist_flying_batch, "There is already a flying batch!");
     if (!messages.empty()) {
@@ -76,7 +101,8 @@ std::vector<torch::Tensor> fetch_new_requests() {
     }
 
     // return the tensors
-    return std::move(tensors);
+    return {std::move(request_ids), std::move(is_prompt), std::move(start_layer_idx), std::move(end_layer_idx),
+            std::move(num_tokens), std::move(max_tokens), std::move(tensors)};
 }
 
 

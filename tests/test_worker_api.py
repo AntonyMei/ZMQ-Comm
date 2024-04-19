@@ -13,7 +13,9 @@ def main():
     # test worker functions
     llm_sys.worker_start_network_threads()
     time.sleep(5)
+    start_time = time.time()
     res = llm_sys.worker_fetch_new_requests()
+    print("Time to fetch new requests: ", time.time() - start_time)
     print(res)
 
 

@@ -76,11 +76,11 @@ Header generate_random_header() {
     header.creation_time = get_time();
     header.request_id = rand() % 100;
     header.num_tokens = rand() % 100;
-    header.max_tokens = rand() % 100;
+    header.max_tokens = header.num_tokens + rand() % 100;
     // add random stages
-    int total_stages = rand() % MAX_HOP;
+    int total_stages = rand() % (MAX_HOP - 1) + 1;
     for (int i = 0; i < total_stages; i++) {
-        header.add_stage(rand() % 10, rand() % 10, rand() % 10);
+        header.add_stage(rand() % 10, i, i + 1);
         header.swarm_delta[i] = rand() % 10;
     }
     return header;
