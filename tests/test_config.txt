@@ -1,0 +1,24 @@
+machine_id: 0
+ip_address: 192.168.1.10
+in_nodes: 3 4
+out_nodes: 1 2
+
+machine_id: 1
+ip_address: 192.168.1.11
+in_nodes: 0
+out_nodes: 3 4
+
+machine_id: 2
+ip_address: 192.168.1.12
+in_nodes: 0
+out_nodes: 3 4
+
+machine_id: 3
+ip_address: 192.168.1.13
+in_nodes: 1 2
+out_nodes: 0
+
+machine_id: 4
+ip_address: 192.168.1.14
+in_nodes: 1 2
+out_nodes: 0

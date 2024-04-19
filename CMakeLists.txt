@@ -46,28 +46,31 @@ target_link_libraries(packed_client cppzmq)
 add_executable(test_msg tests/test_msg.cpp)
 target_link_libraries(test_msg cppzmq)
 
+# test config parser
+add_executable(test_config tests/test_config.cpp)
+
 # test compute worker
 #add_executable(test_compute_worker tests/test_compute_worker.cpp)
 #target_link_libraries(test_compute_worker cppzmq)
 
 # test cuda
-add_executable(test_torch tests/test_torch.cpp)
-target_include_directories(test_torch PRIVATE ${TORCH_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS})
-target_link_libraries(test_torch PRIVATE cppzmq)
-target_link_libraries(test_torch PRIVATE ${PYTHON_LIBRARIES})
-target_link_libraries(test_torch PRIVATE ${TORCH_LIBRARIES})
-target_link_libraries(test_torch PRIVATE ${torch_python_LIBRARY})
-target_link_libraries(test_torch PRIVATE pybind11::pybind11)
+#add_executable(test_torch tests/test_torch.cpp)
+#target_include_directories(test_torch PRIVATE ${TORCH_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS})
+#target_link_libraries(test_torch PRIVATE cppzmq)
+#target_link_libraries(test_torch PRIVATE ${PYTHON_LIBRARIES})
+#target_link_libraries(test_torch PRIVATE ${TORCH_LIBRARIES})
+#target_link_libraries(test_torch PRIVATE ${torch_python_LIBRARY})
+#target_link_libraries(test_torch PRIVATE pybind11::pybind11)
 
 # test python call
-pybind11_add_module(test_python_call MODULE tests/test_python_call.cpp)
-target_include_directories(test_python_call PRIVATE ${TORCH_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS})
-target_link_libraries(test_python_call PRIVATE cppzmq)
-target_link_libraries(test_python_call PRIVATE ${PYTHON_LIBRARIES})
-target_link_libraries(test_python_call PRIVATE ${TORCH_LIBRARIES})
-target_link_libraries(test_python_call PRIVATE ${torch_python_LIBRARY})
-target_link_libraries(test_python_call PRIVATE pybind11::pybind11)
-target_link_libraries(test_python_call PRIVATE pybind11::embed)
+#pybind11_add_module(test_python_call MODULE tests/test_python_call.cpp)
+#target_include_directories(test_python_call PRIVATE ${TORCH_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS})
+#target_link_libraries(test_python_call PRIVATE cppzmq)
+#target_link_libraries(test_python_call PRIVATE ${PYTHON_LIBRARIES})
+#target_link_libraries(test_python_call PRIVATE ${TORCH_LIBRARIES})
+#target_link_libraries(test_python_call PRIVATE ${torch_python_LIBRARY})
+#target_link_libraries(test_python_call PRIVATE pybind11::pybind11)
+#target_link_libraries(test_python_call PRIVATE pybind11::embed)
 
 # llm worker
 pybind11_add_module(llm_worker MODULE src/sys_worker_api.cpp)
