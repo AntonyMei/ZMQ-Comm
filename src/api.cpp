@@ -20,10 +20,14 @@ void worker_start_network_threads() {
     // Creating three threads
     std::thread t1(receiver_thread, std::ref(context));
     std::thread t2(sender_thread, std::ref(context));
+    std::thread gc_thread1(message_gc);
+    std::thread gc_thread2(tensor_gc);
 
     // detach from the main threads to avoid crash
     t1.detach();
     t2.detach();
+    gc_thread1.detach();
+    gc_thread2.detach();
 }
 
 PYBIND11_MODULE(llm_sys, m) {
