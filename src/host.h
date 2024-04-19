@@ -11,10 +11,15 @@
 
 #include "utils.h"
 #include "config_parser.h"
+#include "poller.h"
 
 // network
 zmq::context_t context(1);
 bool network_initialized = false;
+
+// machine configs
+bool machine_configs_initialized = false;
+std::vector<Machine> machine_configs;
 
 
 void config_broadcast(const std::string &config_broadcast_addr, const std::string &config_file_path) {
@@ -27,8 +32,9 @@ void config_broadcast(const std::string &config_broadcast_addr, const std::strin
     log("Config Broadcast", "Successfully bind to address " + config_broadcast_addr);
 
     // read the config file and serialize it
-    std::vector<Machine> machine_configs = read_config(config_file_path);
+    machine_configs = read_config(config_file_path);
     std::string serialized_config = serialize_vector_of_machines(machine_configs);
+    machine_configs_initialized = true;
 
     // main loop
     while (true) {
@@ -48,6 +54,55 @@ void config_broadcast(const std::string &config_broadcast_addr, const std::strin
 }
 
 
+void msg_scatter_thread(const std::string &host_ip) {
+    // wait until machine configs
+    while (!machine_configs_initialized) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    Machine host_machine;
+    for (const auto& machine: machine_configs) {
+        if (machine.machine_id == 0) {
+            host_machine = machine;
+            break;
+        }
+    }
+    Assert(host_machine.ip_address == host_ip, "Host ip mismatch!");
+
+    // get the output ips of host machine
+    std::vector<std::pair<int, std::string>> output_id_ip;
+    for (int machine_id : host_machine.out_nodes) {
+        for (const auto& machine: machine_configs) {
+            if (machine.machine_id == machine_id) {
+                output_id_ip.emplace_back(machine_id, machine.ip_address);
+            }
+        }
+    }
+    for (const auto& id_ip: output_id_ip) {
+        log("Msg Scatter", "Output machine: " + std::to_string(id_ip.first) + " " + id_ip.second);
+    }
+
+    // initialize the output sockets
+    std::unordered_map<int, std::unique_ptr<PollServer>> output_sockets;
+    for (const auto& id_ip: output_id_ip) {
+        std::string bind_address = "tcp://" + host_ip + ":" + std::to_string(BASE_PORT + id_ip.first);
+        output_sockets[id_ip.first] = std::make_unique<PollServer>(context, bind_address);
+    }
+
+    // TODO: main loop of this thread
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
+
+void msg_gather_thread() {
+    // wait until machine configs are initialized
+    while (!machine_configs_initialized) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
+
 void host_start_network_threads(const std::string &config_broadcast_addr, const std::string &host_ip,
                                 const std::string &config_file_path) {
     // config_broadcast_addr format: "tcp://10.128.0.53:5000"
@@ -62,9 +117,11 @@ void host_start_network_threads(const std::string &config_broadcast_addr, const 
 
     // creating threads
     std::thread t1(config_broadcast, config_broadcast_addr, config_file_path);
+    std::thread t2(msg_scatter_thread, host_ip);
 
     // detach from the main threads to avoid crash
     t1.detach();
+    t2.detach();
 }
 
 #endif //ZMQ_COMM_HOST_H

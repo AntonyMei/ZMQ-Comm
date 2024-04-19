@@ -10,6 +10,9 @@
 // msg
 #define MAX_HOP 16
 
+// port
+#define BASE_PORT 6000
+
 // flags
 #define DEBUG true
 
