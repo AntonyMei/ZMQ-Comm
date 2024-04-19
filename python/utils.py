@@ -1,7 +1,7 @@
 import torch
 import socket
 
-HOST_ADDR = "tcp://10.128.0.53:5000"
+CONFIG_BROADCAST_ADDR = "tcp://10.128.0.53:5000"
 
 
 def warm_up():

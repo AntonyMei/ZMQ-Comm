@@ -9,9 +9,9 @@ import utils
 def main():
     # warm up gpu and initialize llm_sys
     utils.warm_up()
-    ip: str = utils.get_local_ip()
-    assert ip.startswith("10"), "Local IP must start with 10"
-    llm_worker.worker_start_network_threads(utils.HOST_ADDR, ip)
+    worker_ip: str = utils.get_local_ip()
+    assert worker_ip.startswith("10"), "Local IP must start with 10"
+    llm_worker.worker_start_network_threads(utils.CONFIG_BROADCAST_ADDR, worker_ip)
 
 
     # TODO: below is not finished

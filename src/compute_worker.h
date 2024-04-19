@@ -11,6 +11,7 @@
 #include <torch/torch.h>
 #include <torch/extension.h>
 
+#include "config_parser.h"
 #include "utils.h"
 #include "const.h"
 #include "msg.h"
@@ -31,23 +32,29 @@ ThreadSafeQueue<std::shared_ptr<torch::Tensor>> tensors_to_release;
 
 
 // receiver
-void receiver_thread(const std::string &host_addr, const std::string &self_ip) {
+void receiver_thread(const std::string &config_broadcast_addr, const std::string &worker_ip) {
     // initialize
     log("Receiver", "Receiver thread has successfully started!");
 
     // get configuration from host
     zmq::socket_t init_socket(context, zmq::socket_type::req);
-    init_socket.connect(host_addr);
-    zmq::message_t init_msg(self_ip.data(), self_ip.size());
+    init_socket.connect(config_broadcast_addr);
+    zmq::message_t init_msg(worker_ip.data(), worker_ip.size());
     zmq::message_t init_reply_msg;
     init_socket.send(init_msg, zmq::send_flags::none);
     auto rc = init_socket.recv(init_reply_msg, zmq::recv_flags::none);
     Assert(rc.has_value(), "Failed to receive the initialization message!");
 
-    // print the initialization message
-    // TODO: dummy
+    // deserialize the initialization message
     std::string init_reply_str(static_cast<char *>(init_reply_msg.data()), init_reply_msg.size());
-    std::cout << "Initialization message: " << init_reply_str << std::endl;
+    std::vector<Machine> machine_configs = deserialize_vector_of_machines(init_reply_str);
+    log("Receiver", "Received machine configs from host!");
+    for (const auto &machine: machine_configs) {
+        print_machine(machine);
+    }
+    log("Receiver", "Above is the whole table of received configs!");
+
+    // TODO: init real comm
 
 
     int counter = 0;
@@ -217,7 +224,7 @@ void tensor_gc() {
 
 
 // sender
-void sender_thread(const std::string &host_addr, const std::string &self_ip) {
+void sender_thread(const std::string &worker_ip) {
     log("Sender", "Sender thread has successfully started!");
 
     while (true) {
@@ -239,20 +246,20 @@ void sender_thread(const std::string &host_addr, const std::string &self_ip) {
 }
 
 
-void worker_start_network_threads(const std::string &host_addr, const std::string &self_ip) {
-    // host_addr format: "tcp://10.128.0.53:5000"
-    // self_ip format: "10.128.0.53"
-    std::cout << "Host connection address: " << host_addr << std::endl;
-    std::cout << "Self IP address (local): " << self_ip << std::endl;
+void worker_start_network_threads(const std::string &config_broadcast_addr, const std::string &worker_ip) {
+    // config_broadcast_addr format: "tcp://10.128.0.53:5000"
+    // worker_ip format: "10.128.0.53"
+    std::cout << "Config broadcast address: " << config_broadcast_addr << std::endl;
+    std::cout << "Worker IP address (local): " << worker_ip << std::endl;
 
     // check that network is not initialized
     Assert(!network_initialized, "Network threads have already been initialized!");
     network_initialized = true;
 
     // creating threads
-    std::thread t1(receiver_thread, host_addr, self_ip);
+    std::thread t1(receiver_thread, config_broadcast_addr, worker_ip);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    std::thread t2(sender_thread, host_addr, self_ip);
+    std::thread t2(sender_thread, worker_ip);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     std::thread gc_thread1(message_gc);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
