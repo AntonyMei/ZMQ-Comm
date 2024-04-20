@@ -55,7 +55,7 @@ void config_broadcast(const std::string &config_broadcast_addr, const std::strin
 
 
 void msg_scatter_thread(const std::string &host_ip) {
-    // wait until machine configs
+    // wait until machine configs are initialized
     while (!machine_configs_initialized) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -95,9 +95,42 @@ void msg_scatter_thread(const std::string &host_ip) {
 }
 
 
-void msg_gather_thread() {
+void msg_gather_thread(const std::string &host_ip) {
     // wait until machine configs are initialized
     while (!machine_configs_initialized) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    Machine host_machine;
+    for (const auto& machine: machine_configs) {
+        if (machine.machine_id == 0) {
+            host_machine = machine;
+            break;
+        }
+    }
+    Assert(host_machine.ip_address == host_ip, "Host ip mismatch!");
+
+    // get the output ips of host machine
+    std::vector<std::pair<int, std::string>> input_id_ip;
+    for (int machine_id : host_machine.in_nodes) {
+        for (const auto& machine: machine_configs) {
+            if (machine.machine_id == machine_id) {
+                input_id_ip.emplace_back(machine_id, machine.ip_address);
+            }
+        }
+    }
+    for (const auto& id_ip: input_id_ip) {
+        log("Msg Gather", "Input machine: " + std::to_string(id_ip.first) + " " + id_ip.second);
+    }
+
+    // initial the input sockets using Poller
+    std::vector<std::string> input_addresses;
+    for (const auto& id_ip: input_id_ip) {
+        std::string address = "tcp://" + id_ip.second + ":" + std::to_string(BASE_PORT + host_machine.machine_id);
+    }
+    PollingClient poll_client = PollingClient(context, input_addresses);
+
+    // TODO: main loop of the thread
+    while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
@@ -118,10 +151,12 @@ void host_start_network_threads(const std::string &config_broadcast_addr, const 
     // creating threads
     std::thread t1(config_broadcast, config_broadcast_addr, config_file_path);
     std::thread t2(msg_scatter_thread, host_ip);
+    std::thread t3(msg_gather_thread, host_ip);
 
     // detach from the main threads to avoid crash
     t1.detach();
     t2.detach();
+    t3.detach();
 }
 
 #endif //ZMQ_COMM_HOST_H
