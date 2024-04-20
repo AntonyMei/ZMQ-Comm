@@ -12,6 +12,7 @@
 #include "utils.h"
 #include "config_parser.h"
 #include "poller.h"
+#include "inproc_queue.h"
 
 // network
 zmq::context_t context(1);
@@ -23,6 +24,9 @@ std::vector<Machine> machine_configs;
 
 // cluster initialization
 bool cluster_initialized = false;
+
+// Queue for launch requests
+ThreadSafeQueue<MessageData> launch_queue;
 
 
 void config_broadcast(const std::string &config_broadcast_addr, const std::string &config_file_path) {
@@ -54,6 +58,51 @@ void config_broadcast(const std::string &config_broadcast_addr, const std::strin
         zmq::message_t reply_msg(serialized_config.data(), serialized_config.size());
         init_socket.send(reply_msg, zmq::send_flags::none);
     }
+}
+
+
+void launch_request(
+        const std::string& request_type,
+        int request_id,
+        int num_tokens,
+        int max_num_tokens,
+        std::vector<int> &token_ids,
+        bool set_routing,
+        const std::vector<int> &server_ids,
+        const std::vector<int> &start_layer_ids,
+        const std::vector<int> &end_layer_ids
+        ) {
+    Header header = Header();
+
+    // set request type
+    if (request_type == "prompt") {
+        header.msg_type = MsgType::Prompt;
+    } else if (request_type == "decode") {
+        header.msg_type = MsgType::Decode;
+    } else {
+        Assert(false, "Unknown request type found!");
+    }
+
+    // set other fields
+    header.creation_time = get_time();
+    header.request_id = request_id;
+    header.num_tokens = num_tokens;
+    header.max_tokens = max_num_tokens;
+
+    // set routing
+    if (set_routing) {
+        size_t num_stages = server_ids.size();
+        for (size_t i = 0; i < num_stages; ++i) {
+            header.add_stage(server_ids[i], start_layer_ids[i], end_layer_ids[i]);
+        }
+    }
+
+    // build zmq message
+    assert(token_ids.size() == 1 || (header.msg_type == MsgType::Prompt && token_ids.size() == num_tokens));
+    zmq::message_t message(token_ids.data(), token_ids.size() * sizeof(int));
+
+    // launch into queue for network transmission
+    launch_queue.push(MessageData(header, std::move(message)));
 }
 
 

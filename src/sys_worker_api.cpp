@@ -13,9 +13,9 @@ PYBIND11_MODULE(llm_worker, m) {
     m.doc() = "LLM system worker";
     // Worker functions
     // Step 0: start network threads
-    m.def("worker_start_network_threads", &worker_start_network_threads, "Compute worker: start network threads.");
+    m.def("start_network_threads", &worker_start_network_threads, "Compute worker: start network threads.");
     // Step 1: fetch new requests
-    m.def("worker_fetch_new_requests", &fetch_new_requests, "Compute worker: fetch new requests from receiver.");
+    m.def("fetch_new_requests", &fetch_new_requests, "Compute worker: fetch new requests from receiver.");
     // Step 2: submit results
-    m.def("worker_submit_requests", &submit_requests, "Compute worker: submit results to sender.");
+    m.def("submit_requests", &submit_requests, "Compute worker: submit results to sender.");
 }
