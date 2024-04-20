@@ -18,6 +18,9 @@
 #include "inproc_queue.h"
 #include "poller.h"
 
+// scheduler
+std::string scheduler_type = "none";
+
 // machine config
 bool machine_configs_initialized = false;
 std::vector<Machine> machine_configs;
@@ -38,6 +41,10 @@ ThreadSafeQueue<std::shared_ptr<torch::Tensor>> tensors_to_release;
 // signals
 bool input_port_initialized = false;
 bool stop_sending_init = false;
+
+// two signals to allow worker_start_network_threads leave
+bool receiver_in_main_loop = false;
+bool sender_in_main_loop = false;
 
 
 // receiver
@@ -159,6 +166,7 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
     // mark as ready
     stop_sending_init = true;
     log("Receiver", "Successfully finished initialization, entering main loop!");
+    receiver_in_main_loop = true;
 
     // TODO: main loop
     int counter = 0;
@@ -399,6 +407,7 @@ void sender_thread(const std::string &worker_ip) {
         output_sockets[id_ip.first]->send(end_init_header, end_init_msg);
     }
     log("Sender", "Successfully finished initialization, entering main loop!");
+    sender_in_main_loop = true;
 
     // TODO: main loop
     while (true) {
@@ -421,15 +430,21 @@ void sender_thread(const std::string &worker_ip) {
 }
 
 
-void worker_start_network_threads(const std::string &config_broadcast_addr, const std::string &worker_ip) {
+void worker_start_network_threads(const std::string &config_broadcast_addr, const std::string &worker_ip,
+                                  const std::string &scheduler) {
     // config_broadcast_addr format: "tcp://10.128.0.53:5000"
     // worker_ip format: "10.128.0.53"
+    // scheduler is: (1) maxflow, (2) swarm, (3) random
     std::cout << "Config broadcast address: " << config_broadcast_addr << std::endl;
     std::cout << "Worker IP address (local): " << worker_ip << std::endl;
 
     // check that network is not initialized
     Assert(!network_initialized, "Network threads have already been initialized!");
     network_initialized = true;
+
+    // set scheduler
+    Assert(scheduler == "swarm" || scheduler == "maxflow" || scheduler == "random", "Bad scheduler type");
+    scheduler_type = scheduler;
 
     // creating threads
     std::thread t1(receiver_thread, config_broadcast_addr, worker_ip);
@@ -445,6 +460,11 @@ void worker_start_network_threads(const std::string &config_broadcast_addr, cons
     t2.detach();
     gc_thread1.detach();
     gc_thread2.detach();
+
+    // wait until sender and receiver are initialized
+    while (!receiver_in_main_loop || !sender_in_main_loop) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 }
 
 

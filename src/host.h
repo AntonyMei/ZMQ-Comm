@@ -14,6 +14,9 @@
 #include "poller.h"
 #include "inproc_queue.h"
 
+// scheduler
+std::string scheduler_type = "none";
+
 // network
 zmq::context_t context(1);
 bool network_initialized = false;
@@ -24,6 +27,10 @@ std::vector<Machine> machine_configs;
 
 // cluster initialization
 bool cluster_initialized = false;
+
+// two signals to allow host_start_network_threads leave
+bool scatter_in_main_loop = false;
+bool gather_in_main_loop = false;
 
 // Queue for launch requests
 ThreadSafeQueue<MessageData> launch_queue;
@@ -79,6 +86,7 @@ void launch_request(
         header.msg_type = MsgType::Prompt;
     } else if (request_type == "decode") {
         header.msg_type = MsgType::Decode;
+        Assert(set_routing, "Must set routing in decode!");
     } else {
         Assert(false, "Unknown request type found!");
     }
@@ -168,11 +176,15 @@ void msg_scatter_thread(const std::string &host_ip) {
         output_sockets[id_ip.first]->send(complete_init_header, complete_init_msg);
     }
     log("Scatter", "Successfully finished initialization, entering main loop!");
+    scatter_in_main_loop = true;
 
-
-    // TODO: main loop of this thread
     while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // TODO: main loop of this thread
+        std::vector<MessageData> new_messages = launch_queue.pop_all();
+
+        for (const auto &message: new_messages) {
+
+        }
     }
 }
 
@@ -276,6 +288,7 @@ void msg_gather_thread(const std::string &host_ip) {
         }
     }
     log("Gather", "Successfully finished initialization, entering main loop!");
+    gather_in_main_loop = true;
 
     // TODO: main loop of the thread
     while (true) {
@@ -285,16 +298,22 @@ void msg_gather_thread(const std::string &host_ip) {
 
 
 void host_start_network_threads(const std::string &config_broadcast_addr, const std::string &host_ip,
-                                const std::string &config_file_path) {
+                                const std::string &config_file_path, const std::string &scheduler) {
     // config_broadcast_addr format: "tcp://10.128.0.53:5000"
     // host_ip format: "10.128.0.53"
+    // scheduler is: (1) maxflow, (2) swarm, (3) random
     std::cout << "Config broadcast address: " << config_broadcast_addr << std::endl;
     std::cout << "Host IP address (local): " << host_ip << std::endl;
+    std::cout << "Scheduler type: " << scheduler << std::endl;
     Assert(config_broadcast_addr.find(host_ip) != std::string::npos, "Host IP mismatch!");
 
     // check that network is not initialized
     Assert(!network_initialized, "Network threads have already been initialized!");
     network_initialized = true;
+
+    // set scheduler
+    Assert(scheduler == "swarm" || scheduler == "maxflow" || scheduler == "random", "Bad scheduler type");
+    scheduler_type = scheduler;
 
     // creating threads
     std::thread t1(config_broadcast, config_broadcast_addr, config_file_path);
@@ -305,6 +324,11 @@ void host_start_network_threads(const std::string &config_broadcast_addr, const 
     t1.detach();
     t2.detach();
     t3.detach();
+
+    // wait until init finish to leave
+    while (!scatter_in_main_loop || !gather_in_main_loop) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 }
 
 #endif //ZMQ_COMM_HOST_H

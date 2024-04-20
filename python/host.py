@@ -11,7 +11,8 @@ def main():
     utils.warm_up()
     host_ip: str = utils.get_local_ip()
     assert host_ip.startswith("10"), "Local IP must be of form 10.xxx.xxx.xxx"
-    llm_host.start_network_threads(utils.CONFIG_BROADCAST_ADDR, host_ip, "./config.txt")
+    llm_host.start_network_threads(utils.CONFIG_BROADCAST_ADDR, host_ip, "./config.txt", "maxflow")
+    print("[Python] Cluster initialization finished!")
 
     # TODO: finish the python side main loop
     while True:

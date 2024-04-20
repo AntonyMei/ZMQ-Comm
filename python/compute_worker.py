@@ -11,7 +11,8 @@ def main():
     utils.warm_up()
     worker_ip: str = utils.get_local_ip()
     assert worker_ip.startswith("10"), "Local IP must start with 10"
-    llm_worker.start_network_threads(utils.CONFIG_BROADCAST_ADDR, worker_ip)
+    llm_worker.start_network_threads(utils.CONFIG_BROADCAST_ADDR, worker_ip, "maxflow")
+    print("[Python] Cluster initialization finished!")
 
     # TODO: python side main loop
     while True:
