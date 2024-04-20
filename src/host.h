@@ -55,6 +55,8 @@ void config_broadcast(const std::string &config_broadcast_addr, const std::strin
 
 
 void msg_scatter_thread(const std::string &host_ip) {
+    log("MSG Scatter", "Message scatter thread has successfully started!");
+
     // wait until machine configs are initialized
     while (!machine_configs_initialized) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -78,7 +80,7 @@ void msg_scatter_thread(const std::string &host_ip) {
         }
     }
     for (const auto& id_ip: output_id_ip) {
-        log("Msg Scatter", "Output machine: " + std::to_string(id_ip.first) + " " + id_ip.second);
+        log("Msg Scatter", "Output machine: id=[" + std::to_string(id_ip.first) + "], ip=[" + id_ip.second + "]");
     }
 
     // initialize the output sockets
@@ -96,6 +98,8 @@ void msg_scatter_thread(const std::string &host_ip) {
 
 
 void msg_gather_thread(const std::string &host_ip) {
+    log("MSG Gather", "Message gather thread has successfully started!");
+
     // wait until machine configs are initialized
     while (!machine_configs_initialized) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -119,13 +123,14 @@ void msg_gather_thread(const std::string &host_ip) {
         }
     }
     for (const auto& id_ip: input_id_ip) {
-        log("Msg Gather", "Input machine: " + std::to_string(id_ip.first) + " " + id_ip.second);
+        log("Msg Gather", "Input machine: id=[" + std::to_string(id_ip.first) + "], ip=[" + id_ip.second + "]");
     }
 
     // initial the input sockets using Poller
     std::vector<std::string> input_addresses;
     for (const auto& id_ip: input_id_ip) {
         std::string address = "tcp://" + id_ip.second + ":" + std::to_string(BASE_PORT + host_machine.machine_id);
+        input_addresses.emplace_back(address);
     }
     PollingClient poll_client = PollingClient(context, input_addresses);
 

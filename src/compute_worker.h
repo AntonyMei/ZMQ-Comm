@@ -16,6 +16,11 @@
 #include "const.h"
 #include "msg.h"
 #include "inproc_queue.h"
+#include "poller.h"
+
+// machine config
+bool machine_configs_initialized = false;
+std::vector<Machine> machine_configs;
 
 // global queue
 zmq::context_t context(1);
@@ -47,33 +52,63 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
 
     // deserialize the initialization message
     std::string init_reply_str(static_cast<char *>(init_reply_msg.data()), init_reply_msg.size());
-    std::vector<Machine> machine_configs = deserialize_vector_of_machines(init_reply_str);
+    machine_configs = deserialize_vector_of_machines(init_reply_str);
+    machine_configs_initialized = true;
     log("Receiver", "Received machine configs from host!");
     for (const auto &machine: machine_configs) {
         print_machine(machine);
     }
     log("Receiver", "Above is the whole table of received configs!");
 
-    // TODO: init real comm
+    // get the machine config for the current worker
+    Machine current_machine;
+    for (const auto &machine: machine_configs) {
+        if (machine.ip_address == worker_ip) {
+            current_machine = machine;
+            break;
+        }
+    }
+    Assert(current_machine.machine_id != -1, "Could not find config for worker!");
 
+    // get input machine id and ip pairs
+    std::vector<std::pair<int, std::string>> input_id_ip;
+    for (int machine_id: current_machine.in_nodes) {
+        for (const auto &machine: machine_configs) {
+            if (machine.machine_id == machine_id) {
+                input_id_ip.emplace_back(machine_id, machine.ip_address);
+            }
+        }
+    }
+    for (const auto& id_ip: input_id_ip) {
+        log("Receiver", "Input machine: id=[" + std::to_string(id_ip.first) + "], ip=[" + id_ip.second + "]");
+    }
 
+    // initialize the polling client
+    std::vector<std::string> input_addresses;
+    for (const auto &id_ip: input_id_ip) {
+        std::string address = "tcp://" + id_ip.second + ":" + std::to_string(BASE_PORT + current_machine.machine_id);
+        input_addresses.emplace_back(address);
+    }
+    PollingClient poll_client = PollingClient(context, input_addresses);
+
+    // TODO: main loop
     int counter = 0;
     while (true) {
         // TODO: network receiver (now we use some dummy workload to simulate the network receiver)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        constexpr size_t buffer_size = 8192 * 2 * 1000;
-        std::vector<char> buffer(buffer_size, 'a');
-        zmq::message_t buffer_msg(buffer.data(), buffer.size());   // there is a copy here
-        Header header = generate_random_header();
-        header.request_id = counter++;
-        if (counter == 128) {
-            break;
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+//        constexpr size_t buffer_size = 8192 * 2 * 1000;
+//        std::vector<char> buffer(buffer_size, 'a');
+//        zmq::message_t buffer_msg(buffer.data(), buffer.size());   // there is a copy here
+//        Header header = generate_random_header();
+//        header.request_id = counter++;
+//        if (counter == 10) {
+//            break;
+//        }
         // END TODO
 
         // send the header and buffer to compute thread
-        zmq::message_t header_msg = header.serialize();
-        recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
+//        zmq::message_t header_msg = header.serialize();
+//        recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
     }
 }
 
@@ -227,20 +262,57 @@ void tensor_gc() {
 void sender_thread(const std::string &worker_ip) {
     log("Sender", "Sender thread has successfully started!");
 
-    while (true) {
-        // receive all messages from the compute thread
-        std::vector<MessageData> messages = compute_send_queue.pop_all();
+    // wait until machine configs are available
+    while (!machine_configs_initialized) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 
-        // TODO: network sender (now we use some dummy workload to simulate the network sender)
-        if (DEBUG) {
-            auto finish_time = get_time();
-            for (const auto &message: messages) {
-                auto delta_time = finish_time - message.header.creation_time;
-                std::cout << "Request id: " << message.header.request_id << "\n";
-                std::cout << "Delta time: " << delta_time << " us\n";
-//                print_header("Sender", message.header);
+    // get the machine config for the current worker
+    Machine current_machine;
+    for (const auto &machine: machine_configs) {
+        if (machine.ip_address == worker_ip) {
+            current_machine = machine;
+            break;
+        }
+    }
+    Assert(current_machine.machine_id != -1, "Could not find config for worker!");
+
+    // get output machine id and ip pairs
+    std::vector<std::pair<int, std::string>> output_id_ip;
+    for (int machine_id: current_machine.out_nodes) {
+        for (const auto &machine: machine_configs) {
+            if (machine.machine_id == machine_id) {
+                output_id_ip.emplace_back(machine_id, machine.ip_address);
             }
         }
+    }
+    for (const auto& id_ip: output_id_ip) {
+        log("Sender", "Output machine: id=[" + std::to_string(id_ip.first) + "], ip=[" + id_ip.second + "]");
+    }
+
+    // initial the output sockets
+    std::unordered_map<int, std::unique_ptr<PollServer>> output_sockets;
+    for (const auto& id_ip: output_id_ip) {
+        std::string bind_address = "tcp://" + worker_ip + ":" + std::to_string(BASE_PORT + id_ip.first);
+        output_sockets[id_ip.first] = std::make_unique<PollServer>(context, bind_address);
+    }
+
+    // TODO: main loop
+    while (true) {
+        // receive all messages from the compute thread
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+//        std::vector<MessageData> messages = compute_send_queue.pop_all();
+
+        // TODO: network sender (now we use some dummy workload to simulate the network sender)
+//        if (DEBUG) {
+//            auto finish_time = get_time();
+//            for (const auto &message: messages) {
+//                auto delta_time = finish_time - message.header.creation_time;
+//                std::cout << "Request id: " << message.header.request_id << "\n";
+//                std::cout << "Delta time: " << delta_time << " us\n";
+//                print_header("Sender", message.header);
+//            }
+//        }
         // END TODO
     }
 }
