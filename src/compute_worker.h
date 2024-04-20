@@ -35,6 +35,10 @@ std::unordered_map<int, std::shared_ptr<MessageData>> requests_on_the_fly;
 ThreadSafeQueue<std::shared_ptr<MessageData>> requests_to_release;
 ThreadSafeQueue<std::shared_ptr<torch::Tensor>> tensors_to_release;
 
+// signals
+bool input_port_initialized = false;
+bool stop_sending_init = false;
+
 
 // receiver
 void receiver_thread(const std::string &config_broadcast_addr, const std::string &worker_ip) {
@@ -90,6 +94,71 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
         input_addresses.emplace_back(address);
     }
     PollingClient poll_client = PollingClient(context, input_addresses);
+
+    // wait until all input ports are properly initialized
+    // a set of machines that are not ready
+    std::unordered_set<int> input_machines_not_ready;
+    for (const auto &id_ip: input_id_ip) {
+        input_machines_not_ready.insert(id_ip.first);
+    }
+    // loop until all input machines are ready
+    while (!input_machines_not_ready.empty()) {
+        // receive a message
+        zmq::message_t input_msg;
+        Header header = poll_client.poll_once(input_msg, 100);
+        if (header.msg_type == MsgType::Invalid) {
+            continue;
+        }
+        Assert(header.msg_type == MsgType::Init, "Received non-init message!");
+
+        // convert the message to string
+        std::string input_msg_str(static_cast<char *>(input_msg.data()), input_msg.size());
+        int input_machine_id = std::stoi(input_msg_str);
+
+        // remove if still in the set
+        if (input_machines_not_ready.find(input_machine_id) != input_machines_not_ready.end()) {
+            input_machines_not_ready.erase(input_machine_id);
+            log("Receiver", "Input machine id=[" + std::to_string(input_machine_id) + "] is ready!");
+            log("Receiver", "Remaining input machines: " + std::to_string(input_machines_not_ready.size()) + "!");
+        }
+    }
+    // mark as ready
+    input_port_initialized = true;
+    log("Receiver", "All input ports are properly initialized!");
+
+    // receive complete init signal from all input machines
+    // a set of machines that are not ready
+    std::unordered_set<int> input_machines_not_complete;
+    for (const auto &id_ip: input_id_ip) {
+        input_machines_not_complete.insert(id_ip.first);
+    }
+    // loop until all input machines are complete
+    while (!input_machines_not_complete.empty()) {
+        // receive a message
+        zmq::message_t input_msg;
+        Header header = poll_client.poll_once(input_msg, 100);
+        if (header.msg_type == MsgType::Invalid) {
+            continue;
+        }
+        Assert(header.msg_type == MsgType::InitComplete || header.msg_type == MsgType::Init,
+               "Received non-init-related message!");
+
+        // convert the message to string
+        std::string input_msg_str(static_cast<char *>(input_msg.data()), input_msg.size());
+        int input_machine_id = std::stoi(input_msg_str);
+
+        // remove the machine from the set based on message type
+        Assert(input_machines_not_complete.find(input_machine_id) != input_machines_not_complete.end(),
+               "Machine already marked as complete!");
+        if (header.msg_type == MsgType::InitComplete) {
+            input_machines_not_complete.erase(input_machine_id);
+            log("Receiver", "Input machine id=[" + std::to_string(input_machine_id) + "] is complete!");
+            log("Receiver", "Remaining input machines: " + std::to_string(input_machines_not_complete.size()) + "!");
+        }
+    }
+    // mark as ready
+    stop_sending_init = true;
+    log("Receiver", "Successfully finished initialization, entering main loop!");
 
     // TODO: main loop
     int counter = 0;
@@ -296,6 +365,40 @@ void sender_thread(const std::string &worker_ip) {
         std::string bind_address = "tcp://" + worker_ip + ":" + std::to_string(BASE_PORT + id_ip.first);
         output_sockets[id_ip.first] = std::make_unique<PollServer>(context, bind_address);
     }
+
+    // initialization
+    // wait until the input ports are initialized (i.e. received Init message from all input machines)
+    while (!input_port_initialized) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    log("Sender", "Start pushing init messages to the next stage!");
+    // build message that can be reused
+    Header init_header = Header();
+    init_header.msg_type = MsgType::Init;
+    init_header.creation_time = get_time();
+    std::string init_msg_str = std::to_string(current_machine.machine_id);  // send the machine id out
+    // send init until we receive the signal
+    // we need to send repeatedly because some messages may be lost
+    Assert(!stop_sending_init, "Stop sending init signal should not be true!");
+    while (!stop_sending_init) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        for (const auto& id_ip: output_id_ip) {
+            zmq::message_t init_msg(init_msg_str.data(), init_msg_str.size());
+            output_sockets[id_ip.first]->send(init_header, init_msg);
+        }
+    }
+    log("Sender", "Stop sending init messages to the next stage!");
+    // send out one end init message to each output machine
+    // this message will not be lost
+    Header end_init_header = Header();
+    end_init_header.msg_type = MsgType::InitComplete;
+    end_init_header.creation_time = get_time();
+    std::string end_init_msg_str = std::to_string(current_machine.machine_id);  // send the machine id out
+    for (const auto& id_ip: output_id_ip) {
+        zmq::message_t end_init_msg(end_init_msg_str.data(), end_init_msg_str.size());
+        output_sockets[id_ip.first]->send(end_init_header, end_init_msg);
+    }
+    log("Sender", "Successfully finished initialization, entering main loop!");
 
     // TODO: main loop
     while (true) {

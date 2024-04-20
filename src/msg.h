@@ -17,14 +17,14 @@ enum class MsgType {
     Invalid = 0,
     // cluster initialization
     Init = 1,
-    InitComplete = 1,
+    InitComplete = 2,
     // running tasks
-    Prompt = 2,
-    Decode = 3,
+    Prompt = 3,
+    Decode = 4,
     // info
-    SwarmInfo = 4,
+    SwarmInfo = 5,
     // termination
-    Terminate = 5,
+    Terminate = 6,
 };
 
 
