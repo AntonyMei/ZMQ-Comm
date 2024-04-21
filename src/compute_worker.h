@@ -193,7 +193,6 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
 
         if (header.msg_type == MsgType::Prompt || header.msg_type == MsgType::Decode) {
             // send the header and buffer to compute thread
-            zmq::message_t header_msg = header.serialize();
             recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
         } else if (header.msg_type == MsgType::SwarmInfo) {
             // TODO: finish this branch

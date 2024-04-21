@@ -16,4 +16,6 @@ PYBIND11_MODULE(llm_host, m) {
     m.def("start_network_threads", &host_start_network_threads, "Host: start network threads.");
     // Step 1: launch requests
     m.def("launch_request", &launch_request, "Host: launch request");
+    // Step 2: gather finished requests
+    m.def("gather_finished_requests", &gather_finished_requests, "Host: gather finished requests");
 }

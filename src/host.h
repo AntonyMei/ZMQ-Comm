@@ -34,6 +34,7 @@ bool gather_in_main_loop = false;
 
 // Queue for launch requests
 ThreadSafeQueue<MessageData> launch_queue;
+ThreadSafeQueue<std::tuple<Header, int>> finish_queue;
 
 
 void config_broadcast(const std::string &config_broadcast_addr, const std::string &config_file_path) {
@@ -111,6 +112,24 @@ void launch_request(
 
     // launch into queue for network transmission
     launch_queue.push(MessageData(header, std::move(message)));
+}
+
+// return val
+// 1. request_id: List[int]
+// 2. generated_id: List[int]
+std::tuple<std::vector<int>, std::vector<int>> gather_finished_requests() {
+    std::vector<int> request_ids;
+    std::vector<int> generated_ids;
+
+    // get all messages
+    std::vector<std::tuple<Header, int>> new_messages = finish_queue.pop_all();
+
+    for (auto &message: new_messages) {
+        request_ids.push_back(std::get<0>(message).request_id);
+        generated_ids.push_back(std::get<1>(message));
+    }
+
+    return {std::move(request_ids), std::move(generated_ids)};
 }
 
 
@@ -309,9 +328,28 @@ void msg_gather_thread(const std::string &host_ip) {
     log("Gather", "Successfully finished initialization, entering main loop!");
     gather_in_main_loop = true;
 
-    // TODO: main loop of the thread
+    // main loop
     while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // get the message
+        zmq::message_t buffer_msg;
+        Header header = poll_client.poll_once(buffer_msg, 10);
+        if (header.msg_type == MsgType::Invalid) {
+            continue;
+        }
+
+        if (header.msg_type == MsgType::Prompt || header.msg_type == MsgType::Decode) {
+            // deserialize the message into a generated token id (int)
+            Assert(buffer_msg.size() == sizeof(int), "Message should contain only one int!");
+            int token_id = *(static_cast<int *>(buffer_msg.data()));
+
+            // send the header and buffer to compute thread
+            finish_queue.push({header, token_id});
+        } else if (header.msg_type == MsgType::SwarmInfo) {
+            // TODO: finish this branch
+            Assert(scheduler_type == "swarm", "Received swarm info that should not exist!");
+        } else if (header.msg_type == MsgType::Terminate) {
+            break;
+        }
     }
 }
 
