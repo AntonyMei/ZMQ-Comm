@@ -49,6 +49,9 @@ target_link_libraries(test_msg cppzmq)
 # test config parser
 add_executable(test_config tests/test_config.cpp)
 
+# test swarm
+add_executable(test_swarm tests/test_swarm.cpp)
+
 # test compute worker
 #add_executable(test_compute_worker tests/test_compute_worker.cpp)
 #target_link_libraries(test_compute_worker cppzmq)
