@@ -6,7 +6,6 @@
 
 namespace py = pybind11;
 
-// TODO: remove this
 torch::Tensor test_tensor() {
 //    std::cout << "test_tensor" << std::endl;
 //    torch::Tensor tensor = torch::ones({2, 2}); // simpler tensor
