@@ -46,6 +46,10 @@ bool stop_sending_init = false;
 bool receiver_in_main_loop = false;
 bool sender_in_main_loop = false;
 
+// model start and end layer idx: [start, end)
+int model_start_layer_index = -1;
+int model_end_layer_index = -1;
+
 
 // receiver
 void receiver_thread(const std::string &config_broadcast_addr, const std::string &worker_ip) {
@@ -80,6 +84,8 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
         }
     }
     Assert(current_machine.machine_id != -1, "Could not find config for worker!");
+    model_start_layer_index = current_machine.start_layer;
+    model_end_layer_index = current_machine.end_layer;
 
     // get input machine id and ip pairs
     std::vector<std::pair<int, std::string>> input_id_ip;
@@ -90,7 +96,7 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
             }
         }
     }
-    for (const auto& id_ip: input_id_ip) {
+    for (const auto &id_ip: input_id_ip) {
         log("Receiver", "Input machine: id=[" + std::to_string(id_ip.first) + "], ip=[" + id_ip.second + "]");
     }
 
@@ -168,25 +174,32 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
     log("Receiver", "Successfully finished initialization, entering main loop!");
     receiver_in_main_loop = true;
 
-    // TODO: main loop
-    int counter = 0;
-    while (true) {
-        // TODO: network receiver (now we use some dummy workload to simulate the network receiver)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-//        constexpr size_t buffer_size = 8192 * 2 * 1000;
-//        std::vector<char> buffer(buffer_size, 'a');
-//        zmq::message_t buffer_msg(buffer.data(), buffer.size());   // there is a copy here
-//        Header header = generate_random_header();
-//        header.request_id = counter++;
-//        if (counter == 10) {
-//            break;
-//        }
-        // END TODO
 
-        // send the header and buffer to compute thread
-//        zmq::message_t header_msg = header.serialize();
-//        recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
+    // main loop
+    while (true) {
+        // get the message
+        zmq::message_t buffer_msg;
+        Header header = poll_client.poll_once(buffer_msg, 10);
+        if (header.msg_type == MsgType::Invalid) {
+            continue;
+        }
+
+        if (header.msg_type == MsgType::Prompt || header.msg_type == MsgType::Decode) {
+            // send the header and buffer to compute thread
+            zmq::message_t header_msg = header.serialize();
+            recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
+        } else if (header.msg_type == MsgType::SwarmInfo) {
+            // TODO: finish this branch
+            Assert(scheduler_type == "swarm", "Received swarm info that should not exist!");
+        } else if (header.msg_type == MsgType::Terminate) {
+            break;
+        }
     }
+}
+
+// compute - step 0: get which layers are on this node
+std::tuple<int, int> get_model_start_end_idx() {
+    return {model_start_layer_index, model_end_layer_index};
 }
 
 
@@ -199,20 +212,33 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
 //  5. num_tokens: List[int]
 //  6. max_tokens: List[int]
 //  7. tensors: List[Torch.Tensor]
+//      For first layer: type: torch.int32: token ids
+//      For other layers: type: torch.float16: activations
 std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<int>, std::vector<int>,
         std::vector<int>, std::vector<torch::Tensor>> fetch_new_requests() {
-    // TODO: process special messages
     // read all messages from the receiver
     std::vector<MessageData> messages = recv_compute_queue.pop_all();
 
     // process the messages into torch tensors
     std::vector<torch::Tensor> tensors;
-    auto options = torch::TensorOptions().dtype(torch::kFloat16);
-    for (auto &message: messages) {
-        auto *data = static_cast<c10::Half *>(message.buffer_msg.data());
-        auto length = static_cast<int>(message.buffer_msg.size() / 2);
-        torch::Tensor tensor = torch::from_blob(data, {length}, options);
-        tensors.emplace_back(std::move(tensor));
+    if (model_start_layer_index != 0) {
+        // in this case, the buffer contains the activations, which are in FP16
+        auto options = torch::TensorOptions().dtype(torch::kFloat16);
+        for (auto &message: messages) {
+            auto *data = static_cast<c10::Half *>(message.buffer_msg.data());
+            auto length = static_cast<int>(message.buffer_msg.size() / 2);
+            torch::Tensor tensor = torch::from_blob(data, {length}, options);
+            tensors.emplace_back(std::move(tensor));
+        }
+    } else {
+        // in this case, the buffer contains the token ids, which are ints
+        auto options = torch::TensorOptions().dtype(torch::kInt32);
+        for (auto &message: messages) {
+            auto *data = static_cast<int*>(message.buffer_msg.data());  // use int as the type
+            auto length = static_cast<int>(message.buffer_msg.size() / sizeof(int));
+            torch::Tensor tensor = torch::from_blob(data, {length}, options);
+            tensors.emplace_back(std::move(tensor));
+        }
     }
 
     // process the header
@@ -363,13 +389,13 @@ void sender_thread(const std::string &worker_ip) {
             }
         }
     }
-    for (const auto& id_ip: output_id_ip) {
+    for (const auto &id_ip: output_id_ip) {
         log("Sender", "Output machine: id=[" + std::to_string(id_ip.first) + "], ip=[" + id_ip.second + "]");
     }
 
     // initial the output sockets
     std::unordered_map<int, std::unique_ptr<PollServer>> output_sockets;
-    for (const auto& id_ip: output_id_ip) {
+    for (const auto &id_ip: output_id_ip) {
         std::string bind_address = "tcp://" + worker_ip + ":" + std::to_string(BASE_PORT + id_ip.first);
         output_sockets[id_ip.first] = std::make_unique<PollServer>(context, bind_address);
     }
@@ -390,7 +416,7 @@ void sender_thread(const std::string &worker_ip) {
     Assert(!stop_sending_init, "Stop sending init signal should not be true!");
     while (!stop_sending_init) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        for (const auto& id_ip: output_id_ip) {
+        for (const auto &id_ip: output_id_ip) {
             zmq::message_t init_msg(init_msg_str.data(), init_msg_str.size());
             output_sockets[id_ip.first]->send(init_header, init_msg);
         }
@@ -402,14 +428,14 @@ void sender_thread(const std::string &worker_ip) {
     end_init_header.msg_type = MsgType::InitComplete;
     end_init_header.creation_time = get_time();
     std::string end_init_msg_str = std::to_string(current_machine.machine_id);  // send the machine id out
-    for (const auto& id_ip: output_id_ip) {
+    for (const auto &id_ip: output_id_ip) {
         zmq::message_t end_init_msg(end_init_msg_str.data(), end_init_msg_str.size());
         output_sockets[id_ip.first]->send(end_init_header, end_init_msg);
     }
     log("Sender", "Successfully finished initialization, entering main loop!");
     sender_in_main_loop = true;
 
-    // TODO: main loop
+    // TODO: main loop (if last layer!!!!!!!!!!!!!!!!!)
     while (true) {
         // receive all messages from the compute thread
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));

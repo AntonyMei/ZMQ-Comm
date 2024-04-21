@@ -69,7 +69,7 @@ void config_broadcast(const std::string &config_broadcast_addr, const std::strin
 
 
 void launch_request(
-        const std::string& request_type,
+        const std::string &request_type,
         int request_id,
         int num_tokens,
         int max_num_tokens,
@@ -78,7 +78,7 @@ void launch_request(
         const std::vector<int> &server_ids,
         const std::vector<int> &start_layer_ids,
         const std::vector<int> &end_layer_ids
-        ) {
+) {
     Header header = Header();
 
     // set request type
@@ -122,7 +122,7 @@ void msg_scatter_thread(const std::string &host_ip) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     Machine host_machine;
-    for (const auto& machine: machine_configs) {
+    for (const auto &machine: machine_configs) {
         if (machine.machine_id == 0) {
             host_machine = machine;
             break;
@@ -132,20 +132,20 @@ void msg_scatter_thread(const std::string &host_ip) {
 
     // get the output ips of host machine
     std::vector<std::pair<int, std::string>> output_id_ip;
-    for (int machine_id : host_machine.out_nodes) {
-        for (const auto& machine: machine_configs) {
+    for (int machine_id: host_machine.out_nodes) {
+        for (const auto &machine: machine_configs) {
             if (machine.machine_id == machine_id) {
                 output_id_ip.emplace_back(machine_id, machine.ip_address);
             }
         }
     }
-    for (const auto& id_ip: output_id_ip) {
+    for (const auto &id_ip: output_id_ip) {
         log("Scatter", "Output machine: id=[" + std::to_string(id_ip.first) + "], ip=[" + id_ip.second + "]");
     }
 
     // initialize the output sockets
     std::unordered_map<int, std::unique_ptr<PollServer>> output_sockets;
-    for (const auto& id_ip: output_id_ip) {
+    for (const auto &id_ip: output_id_ip) {
         std::string bind_address = "tcp://" + host_ip + ":" + std::to_string(BASE_PORT + id_ip.first);
         output_sockets[id_ip.first] = std::make_unique<PollServer>(context, bind_address);
     }
@@ -160,7 +160,7 @@ void msg_scatter_thread(const std::string &host_ip) {
     log("Scatter", "Sending out initialization messages to the cluster!");
     while (!cluster_initialized) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        for (const auto& id_ip: output_id_ip) {
+        for (const auto &id_ip: output_id_ip) {
             zmq::message_t init_msg(init_msg_str.data(), init_msg_str.size());
             output_sockets[id_ip.first]->send(init_header, init_msg);
         }
@@ -171,20 +171,39 @@ void msg_scatter_thread(const std::string &host_ip) {
     Header complete_init_header = Header();
     complete_init_header.msg_type = MsgType::InitComplete;
     complete_init_header.creation_time = get_time();
-    for (const auto& id_ip: output_id_ip) {
+    for (const auto &id_ip: output_id_ip) {
         zmq::message_t complete_init_msg(init_msg_str.data(), init_msg_str.size());
         output_sockets[id_ip.first]->send(complete_init_header, complete_init_msg);
     }
     log("Scatter", "Successfully finished initialization, entering main loop!");
     scatter_in_main_loop = true;
 
-    while (true) {
-        // TODO: main loop of this thread
-        std::vector<MessageData> new_messages = launch_queue.pop_all();
+    if (scheduler_type == "maxflow") {
+        while (true) {
+            // get all messages
+            std::vector<MessageData> new_messages = launch_queue.pop_all();
 
-        for (const auto &message: new_messages) {
+            for (auto &message: new_messages) {
+                if (message.header.msg_type == MsgType::Prompt || message.header.msg_type == MsgType::Decode) {
+                    // for prompt and decode, just follow the route
+                    int current_stage = message.header.current_stage;
+                    int next_server_id = message.header.server_id[current_stage];
 
+                    // send the request following the route
+                    output_sockets[next_server_id]->send(message.header, message.buffer_msg);
+                } else if (message.header.msg_type == MsgType::Terminate) {
+                    return;
+                } else {
+                    Assert(false, "Bad message type: " + std::to_string((int) message.header.msg_type));
+                }
+            }
         }
+    } else if (scheduler_type == "swarm") {
+        // TODO: main loop of this thread
+    } else if (scheduler_type == "random") {
+        // TODO: main loop of this thread
+    } else {
+        Assert(false, "Bad scheduler type!");
     }
 }
 
@@ -197,7 +216,7 @@ void msg_gather_thread(const std::string &host_ip) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     Machine host_machine;
-    for (const auto& machine: machine_configs) {
+    for (const auto &machine: machine_configs) {
         if (machine.machine_id == 0) {
             host_machine = machine;
             break;
@@ -207,20 +226,20 @@ void msg_gather_thread(const std::string &host_ip) {
 
     // get the output ips of host machine
     std::vector<std::pair<int, std::string>> input_id_ip;
-    for (int machine_id : host_machine.in_nodes) {
-        for (const auto& machine: machine_configs) {
+    for (int machine_id: host_machine.in_nodes) {
+        for (const auto &machine: machine_configs) {
             if (machine.machine_id == machine_id) {
                 input_id_ip.emplace_back(machine_id, machine.ip_address);
             }
         }
     }
-    for (const auto& id_ip: input_id_ip) {
+    for (const auto &id_ip: input_id_ip) {
         log("Gather", "Input machine: id=[" + std::to_string(id_ip.first) + "], ip=[" + id_ip.second + "]");
     }
 
     // initial the input sockets using Poller
     std::vector<std::string> input_addresses;
-    for (const auto& id_ip: input_id_ip) {
+    for (const auto &id_ip: input_id_ip) {
         std::string address = "tcp://" + id_ip.second + ":" + std::to_string(BASE_PORT + host_machine.machine_id);
         input_addresses.emplace_back(address);
     }

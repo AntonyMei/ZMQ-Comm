@@ -14,6 +14,7 @@ PYBIND11_MODULE(llm_worker, m) {
     // Worker functions
     // Step 0: start network threads
     m.def("start_network_threads", &worker_start_network_threads, "Compute worker: start network threads.");
+    m.def("get_model_start_end_idx", &get_model_start_end_idx, "Compute worker: get model start and end.");
     // Step 1: fetch new requests
     m.def("fetch_new_requests", &fetch_new_requests, "Compute worker: fetch new requests from receiver.");
     // Step 2: submit results
