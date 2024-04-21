@@ -17,6 +17,7 @@
 #include "msg.h"
 #include "inproc_queue.h"
 #include "poller.h"
+#include "swarm.h"
 
 // scheduler
 std::string scheduler_type = "none";
@@ -47,6 +48,7 @@ bool receiver_in_main_loop = false;
 bool sender_in_main_loop = false;
 
 // model start and end layer idx: [start, end)
+int current_machine_id = -1;
 int model_start_layer_index = -1;
 int model_end_layer_index = -1;
 bool is_last_layer = false;
@@ -85,6 +87,7 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
         }
     }
     Assert(current_machine.machine_id != -1, "Could not find config for worker!");
+    current_machine_id = current_machine.machine_id;
     model_start_layer_index = current_machine.start_layer;
     model_end_layer_index = current_machine.end_layer;
 
@@ -183,23 +186,64 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
 
 
     // main loop
-    while (true) {
-        // get the message
-        zmq::message_t buffer_msg;
-        Header header = poll_client.poll_once(buffer_msg, 10);
-        if (header.msg_type == MsgType::Invalid) {
-            continue;
-        }
+    if (scheduler_type == "maxflow") {
+        while (true) {
+            // get the message
+            zmq::message_t buffer_msg;
+            Header header = poll_client.poll_once(buffer_msg, 10);
+            if (header.msg_type == MsgType::Invalid) {
+                continue;
+            }
 
-        if (header.msg_type == MsgType::Prompt || header.msg_type == MsgType::Decode) {
-            // send the header and buffer to compute thread
-            recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
-        } else if (header.msg_type == MsgType::SwarmInfo) {
-            // TODO: finish this branch
-            Assert(scheduler_type == "swarm", "Received swarm info that should not exist!");
-        } else if (header.msg_type == MsgType::Terminate) {
-            break;
+            if (header.msg_type == MsgType::Prompt || header.msg_type == MsgType::Decode) {
+                // send the header and buffer to compute thread
+                Assert(header.server_id[header.current_stage] == current_machine_id, "Mis-routed request!");
+                recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
+            } else if (header.msg_type == MsgType::Terminate) {
+                break;
+            } else {
+                Assert(false, "Unknown message type!");
+            }
         }
+    } else if (scheduler_type == "swarm") {
+        while (true) {
+            // get the message
+            zmq::message_t buffer_msg;
+            Header header = poll_client.poll_once(buffer_msg, 10);
+            if (header.msg_type == MsgType::Invalid) {
+                continue;
+            }
+
+            if (header.msg_type == MsgType::Prompt) {
+                // need to determine the layers to infer before sending into the queue
+                if (header.current_stage == 0) {
+                    header.start_layer_idx[header.current_stage] = 0;
+                } else {
+                    header.start_layer_idx[header.current_stage] = header.end_layer_idx[header.current_stage - 1];
+                }
+                header.end_layer_idx[header.current_stage] = model_end_layer_index;
+                Assert(model_start_layer_index <= header.start_layer_idx[header.current_stage], "Bad infer setting!");
+                Assert(header.start_layer_idx[header.current_stage] < model_end_layer_index, "Bad infer setting!");
+
+                // send the header and buffer to compute thread
+                Assert(header.server_id[header.current_stage] == current_machine_id, "Mis-routed request!");
+                recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
+            } else if (header.msg_type == MsgType::Decode) {
+                // send the header and buffer to compute thread
+                Assert(header.server_id[header.current_stage] == current_machine_id, "Mis-routed request!");
+                recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
+            } else if (header.msg_type == MsgType::SwarmInfo) {
+                // TODO: swarm info branch
+            } else if (header.msg_type == MsgType::Terminate) {
+                break;
+            } else {
+                Assert(false, "Unknown message type!");
+            }
+        }
+    } else if (scheduler_type == "random") {
+        // TODO: random scheduler
+    } else {
+        Assert(false, "Unknown scheduler type!");
     }
 }
 
@@ -493,7 +537,45 @@ void sender_thread(const std::string &worker_ip) {
             }
         }
     } else if (scheduler_type == "swarm") {
-        // TODO: main loop of this thread
+        // initialize the swarm scheduler
+        std::vector<int> out_ids;
+        for (const auto &id_ip: output_id_ip) {
+            out_ids.push_back(id_ip.first);
+        }
+        SwarmScheduler swarm_scheduler = SwarmScheduler(out_ids, 0.05, 0.8);
+
+        // run the main loop
+        while (true) {
+            // get all messages
+            std::vector<MessageData> new_messages = compute_send_queue.pop_all();
+
+            for (auto &message: new_messages) {
+                if (message.header.msg_type == MsgType::Prompt) {
+                    // for prompt phase, we need swarm scheduler to tell us a route
+                    int next_server_id = swarm_scheduler.choose_server();
+
+                    // set next server id into the header
+                    // We will decide the message's inference layers when it arrives at next node
+                    message.header.add_stage(next_server_id, -1, -1);
+
+                    // send out the message
+                    output_sockets[next_server_id]->send(message.header, message.buffer_msg);
+                } else if (message.header.msg_type == MsgType::Decode) {
+                    // for decode phase, just follow the route
+                    int current_stage = message.header.current_stage;
+                    int next_server_id = message.header.server_id[current_stage];
+
+                    // send the request following the route
+                    output_sockets[next_server_id]->send(message.header, message.buffer_msg);
+                } else if (message.header.msg_type == MsgType::SwarmInfo) {
+                    // TODO: swarm info branch
+                } else if (message.header.msg_type == MsgType::Terminate) {
+                    return;
+                } else {
+                    Assert(false, "Bad message type: " + std::to_string((int) message.header.msg_type));
+                }
+            }
+        }
     } else if (scheduler_type == "random") {
         // TODO: main loop of this thread
     } else {
