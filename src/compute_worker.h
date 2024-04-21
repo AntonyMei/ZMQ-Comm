@@ -49,6 +49,7 @@ bool sender_in_main_loop = false;
 // model start and end layer idx: [start, end)
 int model_start_layer_index = -1;
 int model_end_layer_index = -1;
+bool is_last_layer = false;
 
 
 // receiver
@@ -86,6 +87,12 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
     Assert(current_machine.machine_id != -1, "Could not find config for worker!");
     model_start_layer_index = current_machine.start_layer;
     model_end_layer_index = current_machine.end_layer;
+
+    // determine whether the node's output is the last layer
+    // if the node has only one output and the output is 0 (host), then it is the last layer
+    if (current_machine.out_nodes.size() == 1 && current_machine.out_nodes[0] == 0) {
+        is_last_layer = true;
+    }
 
     // get input machine id and ip pairs
     std::vector<std::pair<int, std::string>> input_id_ip;
@@ -198,8 +205,8 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
 }
 
 // compute - step 0: get which layers are on this node
-std::tuple<int, int> get_model_start_end_idx() {
-    return {model_start_layer_index, model_end_layer_index};
+std::tuple<int, int, bool> get_model_start_end_idx() {
+    return {model_start_layer_index, model_end_layer_index, is_last_layer};
 }
 
 
@@ -273,9 +280,11 @@ std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<in
 // Compute - step 2: submit
 // Args:
 //  1. request_ids: List[int]
-//  2. offsets: List[int] (in number of fp16 elements)
-//  3. lengths: List[int] (in number of fp16 elements)
+//  2. offsets: List[int] (in number of elements)
+//  3. lengths: List[int] (in number of elements)
 //  4. result_tensor: Torch.Tensor (a cpu tensor)
+//      if not last layer: type: torch.float16: activations
+//      if last layer: type: torch.int32: generated token ids
 void submit_requests(std::vector<int> &request_ids,
                      std::vector<int> &offsets,
                      std::vector<int> &lengths,
@@ -300,13 +309,20 @@ void submit_requests(std::vector<int> &request_ids,
         // update the header
         message->header.current_stage += 1;
 
-        // build new zmq message
-        auto *start_ptr = result_tensor.data_ptr<c10::Half>() + offset;
-        zmq::message_t new_buf_msg(start_ptr, length * result_tensor.element_size(), custom_free, nullptr);
-        auto new_message = MessageData(message->header, std::move(new_buf_msg));
-
-        // send the message to the compute thread
-        compute_send_queue.push(std::move(new_message));
+        // build new zmq message and push into queue
+        if (!is_last_layer) {
+            // send the activations
+            auto *start_ptr = result_tensor.data_ptr<c10::Half>() + offset;
+            zmq::message_t new_buf_msg(start_ptr, length * result_tensor.element_size(), custom_free, nullptr);
+            auto new_message = MessageData(message->header, std::move(new_buf_msg));
+            compute_send_queue.push(std::move(new_message));
+        } else {
+            // send the token ids
+            auto *start_ptr = result_tensor.data_ptr<int>() + offset;
+            zmq::message_t new_buf_msg(start_ptr, length * result_tensor.element_size(), custom_free, nullptr);
+            auto new_message = MessageData(message->header, std::move(new_buf_msg));
+            compute_send_queue.push(std::move(new_message));
+        }
 
         // send the input message to release
         requests_to_release.push(std::move(message));
@@ -435,23 +451,32 @@ void sender_thread(const std::string &worker_ip) {
     log("Sender", "Successfully finished initialization, entering main loop!");
     sender_in_main_loop = true;
 
-    // TODO: main loop (if last layer!!!!!!!!!!!!!!!!!)
-    while (true) {
-        // receive all messages from the compute thread
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-//        std::vector<MessageData> messages = compute_send_queue.pop_all();
+    if (scheduler_type == "maxflow") {
+        while (true) {
+            // get all messages
+            std::vector<MessageData> new_messages = compute_send_queue.pop_all();
 
-        // TODO: network sender (now we use some dummy workload to simulate the network sender)
-//        if (DEBUG) {
-//            auto finish_time = get_time();
-//            for (const auto &message: messages) {
-//                auto delta_time = finish_time - message.header.creation_time;
-//                std::cout << "Request id: " << message.header.request_id << "\n";
-//                std::cout << "Delta time: " << delta_time << " us\n";
-//                print_header("Sender", message.header);
-//            }
-//        }
-        // END TODO
+            for (auto &message: new_messages) {
+                if (message.header.msg_type == MsgType::Prompt || message.header.msg_type == MsgType::Decode) {
+                    // for prompt and decode, just follow the route
+                    int current_stage = message.header.current_stage;
+                    int next_server_id = message.header.server_id[current_stage];
+
+                    // send the request following the route
+                    output_sockets[next_server_id]->send(message.header, message.buffer_msg);
+                } else if (message.header.msg_type == MsgType::Terminate) {
+                    return;
+                } else {
+                    Assert(false, "Bad message type: " + std::to_string((int) message.header.msg_type));
+                }
+            }
+        }
+    } else if (scheduler_type == "swarm") {
+        // TODO: main loop of this thread
+    } else if (scheduler_type == "random") {
+        // TODO: main loop of this thread
+    } else {
+        Assert(false, "Bad scheduler type!");
     }
 }
 
