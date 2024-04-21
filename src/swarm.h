@@ -28,7 +28,7 @@ public:
         // initialize ema and queue
         for (const int node_id: node_ids) {
             ema[node_id] = _initial_priority;
-            queue.push(std::make_pair(_initial_priority, node_id));
+            queue.emplace(_initial_priority, node_id);
         }
     }
 
@@ -41,7 +41,7 @@ public:
 
         // place it back into queue
         float new_priority = priority + ema[node_id];
-        queue.push(std::make_pair(new_priority, node_id));
+        queue.emplace(new_priority, node_id);
         return node_id;
     }
 

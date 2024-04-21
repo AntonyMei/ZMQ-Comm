@@ -66,8 +66,8 @@ public:
     int server_id[MAX_HOP]{};
     int start_layer_idx[MAX_HOP]{};
     int end_layer_idx[MAX_HOP]{};
-    // for info message only
-    float swarm_delta[MAX_HOP]{};
+    // for swarm only (unit is us)
+    long swarm_delta[MAX_HOP]{};
 };
 
 Header generate_random_header() {

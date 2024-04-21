@@ -300,6 +300,10 @@ void msg_scatter_thread(const std::string &host_ip) {
                     // We will decide the message's inference layers when it arrives at next node
                     message.header.add_stage(next_server_id, -1, -1);
 
+                    // set time for swarm info field (will be used at next stage)
+                    Assert(message.header.current_stage == 0, "Initially, current stage must be 0!");
+                    message.header.swarm_delta[message.header.current_stage] = get_time();
+
                     // send out the message
                     output_sockets[next_server_id]->send(message.header, message.buffer_msg);
                 } else if (message.header.msg_type == MsgType::Decode) {
@@ -307,10 +311,22 @@ void msg_scatter_thread(const std::string &host_ip) {
                     int current_stage = message.header.current_stage;
                     int next_server_id = message.header.server_id[current_stage];
 
+                    // set time for swarm info field (will be used at next stage)
+                    Assert(message.header.current_stage == 0, "Initially, current stage must be 0!");
+                    message.header.swarm_delta[message.header.current_stage] = get_time();
+
                     // send the request following the route
                     output_sockets[next_server_id]->send(message.header, message.buffer_msg);
                 } else if (message.header.msg_type == MsgType::SwarmInfo) {
-                    // TODO: swarm info branch
+                    // update swarm scheduler
+                    Assert(message.header.current_stage == 0, "Initially, current stage must be 0!");
+                    int current_stage = message.header.current_stage;
+                    float delta_time = static_cast<float>(message.header.swarm_delta[current_stage]) / 1000000;
+                    int next_server_id = message.header.server_id[current_stage];
+                    swarm_scheduler.update_weights(next_server_id, delta_time);
+
+                    // send the request following the route
+                    output_sockets[next_server_id]->send(message.header, message.buffer_msg);
                 } else if (message.header.msg_type == MsgType::Terminate) {
                     return;
                 } else {
@@ -464,9 +480,26 @@ void msg_gather_thread(const std::string &host_ip) {
 
                 // send the header and buffer to compute thread
                 finish_queue.push({header, token_id});
+
+                // build a swarm info message
+                Header swarm_info_header = Header();
+                swarm_info_header.msg_type = MsgType::SwarmInfo;
+                swarm_info_header.creation_time = get_time();
+                swarm_info_header.request_id = header.request_id;  // same request id
+                swarm_info_header.num_tokens = -1;
+                swarm_info_header.max_tokens = -1;
+                swarm_info_header.current_stage = 0;
+                for (int i = 0; i < header.total_stages; ++i) {
+                    swarm_info_header.add_stage(header.server_id[i], -1, -1);
+                    swarm_info_header.swarm_delta[i] = header.swarm_delta[i];
+                }
+                int dummy_msg = 0;  // build a dummy buffer msg
+                zmq::message_t dummy_buffer_msg(&dummy_msg, sizeof(int));
+
+                // submit to launch queue
+                launch_queue.push(MessageData(swarm_info_header, std::move(dummy_buffer_msg)));
             } else if (header.msg_type == MsgType::SwarmInfo) {
-                // TODO: finish this branch (may be we need to send out swarm info packages to all machines)
-                Assert(scheduler_type == "swarm", "Received swarm info that should not exist!");
+                Assert(false, "Swarm info should not be passed back to host!");
             } else if (header.msg_type == MsgType::Terminate) {
                 break;
             }

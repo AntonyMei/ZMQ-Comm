@@ -233,7 +233,11 @@ void receiver_thread(const std::string &config_broadcast_addr, const std::string
                 Assert(header.server_id[header.current_stage] == current_machine_id, "Mis-routed request!");
                 recv_compute_queue.push(MessageData(header, std::move(buffer_msg)));
             } else if (header.msg_type == MsgType::SwarmInfo) {
-                // TODO: swarm info branch
+                Assert(header.server_id[header.current_stage] == current_machine_id, "Mis-routed request!");
+
+                // increase the stage counter and send directly to the sender
+                header.current_stage++;
+                compute_send_queue.push(MessageData(header, std::move(buffer_msg)));
             } else if (header.msg_type == MsgType::Terminate) {
                 break;
             } else {
@@ -286,7 +290,7 @@ std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<in
         // in this case, the buffer contains the token ids, which are ints
         auto options = torch::TensorOptions().dtype(torch::kInt32);
         for (auto &message: messages) {
-            auto *data = static_cast<int*>(message.buffer_msg.data());  // use int as the type
+            auto *data = static_cast<int *>(message.buffer_msg.data());  // use int as the type
             auto length = static_cast<int>(message.buffer_msg.size() / sizeof(int));
             torch::Tensor tensor = torch::from_blob(data, {length}, options);
             tensors.emplace_back(std::move(tensor));
@@ -323,7 +327,7 @@ std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<in
     for (const auto &tensor: tensors) {
         offsets.emplace_back(offset);
         lengths.emplace_back(tensor.numel());
-        offset += (int)tensor.numel();
+        offset += (int) tensor.numel();
     }
 
     // move the result tensor to GPU
@@ -558,6 +562,15 @@ void sender_thread(const std::string &worker_ip) {
                     // We will decide the message's inference layers when it arrives at next node
                     message.header.add_stage(next_server_id, -1, -1);
 
+                    // calculating delta time for the finished stage
+                    Assert(message.header.current_stage >= 1, "Bad current stage!");
+                    auto last_stage_start = message.header.swarm_delta[message.header.current_stage - 1];
+                    message.header.swarm_delta[message.header.current_stage - 1] =
+                            get_time() - last_stage_start;
+                    Assert(message.header.swarm_delta[message.header.current_stage - 1] >= 0, "Bad delta time!");
+                    // set time for swarm info field (will be used at next stage)
+                    message.header.swarm_delta[message.header.current_stage] = get_time();
+
                     // send out the message
                     output_sockets[next_server_id]->send(message.header, message.buffer_msg);
                 } else if (message.header.msg_type == MsgType::Decode) {
@@ -565,10 +578,29 @@ void sender_thread(const std::string &worker_ip) {
                     int current_stage = message.header.current_stage;
                     int next_server_id = message.header.server_id[current_stage];
 
+                    // calculating delta time for the finished stage
+                    Assert(message.header.current_stage >= 1, "Bad current stage!");
+                    auto last_stage_start = message.header.swarm_delta[message.header.current_stage - 1];
+                    message.header.swarm_delta[message.header.current_stage - 1] =
+                            get_time() - last_stage_start;
+                    Assert(message.header.swarm_delta[message.header.current_stage - 1] >= 0, "Bad delta time!");
+                    // set time for swarm info field (will be used at next stage)
+                    message.header.swarm_delta[message.header.current_stage] = get_time();
+
                     // send the request following the route
                     output_sockets[next_server_id]->send(message.header, message.buffer_msg);
                 } else if (message.header.msg_type == MsgType::SwarmInfo) {
-                    // TODO: swarm info branch
+                    // last layer only outputs to the host, no need to update
+                    if (!is_last_layer) {
+                        // update swarm scheduler
+                        int current_stage = message.header.current_stage;
+                        float delta_time = static_cast<float>(message.header.swarm_delta[current_stage]) / 1000000;
+                        int next_server_id = message.header.server_id[current_stage];
+                        swarm_scheduler.update_weights(next_server_id, delta_time);
+
+                        // send the request following the route
+                        output_sockets[next_server_id]->send(message.header, message.buffer_msg);
+                    }
                 } else if (message.header.msg_type == MsgType::Terminate) {
                     return;
                 } else {
