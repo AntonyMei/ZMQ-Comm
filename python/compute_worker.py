@@ -40,17 +40,18 @@ def main():
         print()
         # ------------------------------------------------------------------------------------------- #
         # Step 2: dummy compute (suppose activation size is 16 for each token)
+        activation_size = 8192
         if not is_last_layer:
             cur_start_idx = 0
             start_idx_list, length_list = [], []
             for is_prompt, num_token in zip(is_prompt, num_tokens):
                 start_idx_list.append(cur_start_idx)
                 if is_prompt:
-                    length_list.append(num_token * 16)
-                    cur_start_idx += num_token * 16
+                    length_list.append(num_token * activation_size)
+                    cur_start_idx += num_token * activation_size
                 else:
-                    length_list.append(1 * 16)
-                    cur_start_idx += 1 * 16
+                    length_list.append(1 * activation_size)
+                    cur_start_idx += 1 * activation_size
             result_tensor = torch.arange(1, cur_start_idx + 1, dtype=torch.float16)  # a flattened tensor
         else:
             output_token_ids = [-1 if is_p else 1 for is_p in is_prompt]
