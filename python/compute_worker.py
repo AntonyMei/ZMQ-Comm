@@ -21,7 +21,8 @@ def main():
         # ------------------------------------------------------------------------------------------- #
         # Step 1: fetch new requests to compute on
         start_time = time.time()
-        request_ids, is_prompt, start_layer_idx, end_layer_idx, num_tokens, max_tokens, tensors = llm_worker.fetch_new_requests()
+        request_ids, is_prompt, start_layer_idx, end_layer_idx, num_tokens, max_tokens, offsets, \
+            lengths, tensor = llm_worker.fetch_new_requests()
         if len(request_ids) == 0:
             continue
         print("Time to fetch new requests: ", time.time() - start_time)
@@ -31,8 +32,11 @@ def main():
         print("End layer idx: ", end_layer_idx)
         print("Num tokens: ", num_tokens)
         print("Max tokens: ", max_tokens)
-        print("Tensor size: ", [tensor.size() for tensor in tensors])
-        print("Tensor dtype: ", [tensor.dtype for tensor in tensors])
+        print("Offsets: ", offsets)
+        print("Lengths: ", lengths)
+        print("Tensor size: ", tensor.size())
+        print("Tensor dtype: ", tensor.dtype)
+        print("Tensor: ", tensor)
         print()
         # ------------------------------------------------------------------------------------------- #
         # Step 2: dummy compute (suppose activation size is 16 for each token)

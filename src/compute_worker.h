@@ -217,11 +217,13 @@ std::tuple<int, int, bool> get_model_start_end_idx() {
 //  4. end_layer_idx: List[int]
 //  5. num_tokens: List[int]
 //  6. max_tokens: List[int]
-//  7. tensors: List[Torch.Tensor]
+//  7. offsets: List[int]
+//  8. lengths: List[int]
+//  9. tensor: Torch.Tensor
 //      For first layer: type: torch.int32: token ids
 //      For other layers: type: torch.float16: activations
 std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<int>, std::vector<int>,
-        std::vector<int>, std::vector<torch::Tensor>> fetch_new_requests() {
+        std::vector<int>, std::vector<int>, std::vector<int>, torch::Tensor> fetch_new_requests() {
     // read all messages from the receiver
     std::vector<MessageData> messages = recv_compute_queue.pop_all();
 
@@ -270,9 +272,29 @@ std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<in
         requests_on_the_fly[request_id] = std::make_shared<MessageData>(std::move(message));
     }
 
+    // get the offsets of each tensor
+    std::vector<int> offsets;
+    std::vector<int> lengths;
+    int offset = 0;
+    for (const auto &tensor: tensors) {
+        offsets.emplace_back(offset);
+        lengths.emplace_back(tensor.numel());
+        offset += (int)tensor.numel();
+    }
+
+    // move the result tensor to GPU
+    // if no tensors, return an empty tensor (on cpu)
+    torch::Tensor result_tensor_gpu;
+    if (!tensors.empty()) {
+        torch::Tensor result_tensor = torch::cat(tensors, 0);
+        torch::Device device(torch::kCUDA, 0);
+        result_tensor_gpu = result_tensor.to(device);
+    }
+
     // return the tensors
     return {std::move(request_ids), std::move(is_prompt), std::move(start_layer_idx), std::move(end_layer_idx),
-            std::move(num_tokens), std::move(max_tokens), std::move(tensors)};
+            std::move(num_tokens), std::move(max_tokens), std::move(offsets), std::move(lengths),
+            std::move(result_tensor_gpu)};
 }
 
 
