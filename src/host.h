@@ -8,6 +8,7 @@
 #include <zmq.hpp>
 #include <iostream>
 #include <thread>
+#include <random>
 
 #include "utils.h"
 #include "config_parser.h"
@@ -335,7 +336,45 @@ void msg_scatter_thread(const std::string &host_ip) {
             }
         }
     } else if (scheduler_type == "random") {
-        // TODO: main loop of this thread
+        // get all output ids
+        std::vector<int> out_ids;
+        for (const auto &id_ip: output_id_ip) {
+            out_ids.push_back(id_ip.first);
+        }
+        std::mt19937 gen(0);
+        std::uniform_int_distribution<> distrib(0, (int) out_ids.size() - 1);
+
+        // run the main loop
+        while (true) {
+            // get all messages
+            std::vector<MessageData> new_messages = launch_queue.pop_all();
+
+            for (auto &message: new_messages) {
+                if (message.header.msg_type == MsgType::Prompt) {
+                    // for prompt phase, we need to generate a random route
+                    int random_index = distrib(gen);
+                    int next_server_id = out_ids[random_index];
+
+                    // set next server id into the header
+                    // We will decide the message's inference layers when it arrives at next node
+                    message.header.add_stage(next_server_id, -1, -1);
+
+                    // send out the message
+                    output_sockets[next_server_id]->send(message.header, message.buffer_msg);
+                } else if (message.header.msg_type == MsgType::Decode) {
+                    // for decode phase, just follow the route
+                    int current_stage = message.header.current_stage;
+                    int next_server_id = message.header.server_id[current_stage];
+
+                    // send the request following the route
+                    output_sockets[next_server_id]->send(message.header, message.buffer_msg);
+                } else if (message.header.msg_type == MsgType::Terminate) {
+                    return;
+                } else {
+                    Assert(false, "Bad message type: " + std::to_string((int) message.header.msg_type));
+                }
+            }
+        }
     } else {
         Assert(false, "Bad scheduler type!");
     }
@@ -505,7 +544,27 @@ void msg_gather_thread(const std::string &host_ip) {
             }
         }
     } else if (scheduler_type == "random") {
-        // TODO: finish random scheduler
+        while (true) {
+            // get the message
+            zmq::message_t buffer_msg;
+            Header header = poll_client.poll_once(buffer_msg, 10);
+            if (header.msg_type == MsgType::Invalid) {
+                continue;
+            }
+
+            if (header.msg_type == MsgType::Prompt || header.msg_type == MsgType::Decode) {
+                // deserialize the message into a generated token id (int)
+                Assert(buffer_msg.size() == sizeof(int), "Message should contain only one int!");
+                int token_id = *(static_cast<int *>(buffer_msg.data()));
+
+                // send the header and buffer to compute thread
+                finish_queue.push({header, token_id});
+            } else if (header.msg_type == MsgType::Terminate) {
+                break;
+            } else {
+                Assert(false, "Bad message type: " + std::to_string((int) header.msg_type));
+            }
+        }
     } else {
         Assert(false, "Bad scheduler type!");
     }

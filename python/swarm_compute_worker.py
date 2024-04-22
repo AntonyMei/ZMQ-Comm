@@ -70,6 +70,7 @@ def main():
         start_time = time.time()
         llm_worker.submit_requests(request_ids, start_idx_list, length_list, result_tensor)
         print("Time to submit results: ", time.time() - start_time)
+        print()
         # ------------------------------------------------------------------------------------------- #
 
 
