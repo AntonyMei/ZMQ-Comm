@@ -40,7 +40,6 @@ def main():
         print("Tensor size: ", tensor.size())
         print("Tensor dtype: ", tensor.dtype)
         print("Tensor: ", tensor)
-        print()
         # ------------------------------------------------------------------------------------------- #
         # Step 2: dummy compute (suppose activation size is 16 for each token)
         activation_size = 16

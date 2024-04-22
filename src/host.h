@@ -162,7 +162,14 @@ void launch_request(
 // return val
 // 1. request_id: List[int]
 // 2. generated_id: List[int]
-std::tuple<std::vector<int>, std::vector<int>> gather_finished_requests() {
+// 3. routes: List[List[int]] - only for swarm and random
+//    - for each request, it is a list of [server_id (int)]
+//    - e.g.: [[2, 3, 0], [1, 3, 0]] (last one must be host 0)
+// 4. layer_nums: List[List[int]] - only for swarm and random
+//    - for each request, it is a list of [num_layers_inferred_on_this_node (int)]
+//    - e.g.: [[2, 2, 0], [2, 2, 0]] (last one must be 0, as it stands for host)
+std::tuple<std::vector<int>, std::vector<int>, std::vector<std::vector<int>>, std::vector<std::vector<int>>>
+gather_finished_requests() {
     std::vector<int> request_ids;
     std::vector<int> generated_ids;
 
@@ -191,7 +198,24 @@ std::tuple<std::vector<int>, std::vector<int>> gather_finished_requests() {
         }
     }
 
-    return {std::move(request_ids), std::move(generated_ids)};
+    // prepare routes and layer_nums
+    std::vector<std::vector<int>> routes;
+    std::vector<std::vector<int>> layer_nums;
+    if (scheduler_type == "swarm" || scheduler_type == "random") {
+        for (auto &message: new_messages) {
+            Header header = std::get<0>(message);
+            std::vector<int> route;
+            std::vector<int> layer_num;
+            for (int i = 0; i < header.total_stages; ++i) {
+                route.push_back(header.server_id[i]);
+                layer_num.push_back(header.end_layer_idx[i] - header.start_layer_idx[i]);
+            }
+            routes.emplace_back(route);
+            layer_nums.emplace_back(layer_num);
+        }
+    }
+
+    return {std::move(request_ids), std::move(generated_ids), std::move(routes), std::move(layer_nums)};
 }
 
 

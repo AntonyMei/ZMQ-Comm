@@ -50,11 +50,13 @@ def main():
         # Step 1: Gather finished requests
         time.sleep(10)
         start = time.time()
-        finished_request_ids, generated_token_ids = llm_host.gather_finished_requests()
+        finished_request_ids, generated_token_ids, routes, num_layers = llm_host.gather_finished_requests()
         end = time.time()
         print(f"gather delta={end - start}")
         print(f"finished_request_ids={finished_request_ids}")
         print(f"generated_token_ids={generated_token_ids}")
+        print(f"routes={routes}")
+        print(f"num_layers={num_layers}")
         # ------------------------------------------------------------------------------------------- #
         # Step 1: Launch a few requests
         start = time.time()
@@ -75,11 +77,13 @@ def main():
         # Step 1: Gather finished requests
         time.sleep(10)
         start = time.time()
-        finished_request_ids, generated_token_ids = llm_host.gather_finished_requests()
+        finished_request_ids, generated_token_ids, routes, num_layers = llm_host.gather_finished_requests()
         end = time.time()
         print(f"gather delta={end - start}")
         print(f"finished_request_ids={finished_request_ids}")
         print(f"generated_token_ids={generated_token_ids}")
+        print(f"routes={routes}")
+        print(f"num_layers={num_layers}")
         # ------------------------------------------------------------------------------------------- #
         time.sleep(3000)  # for testing
 
