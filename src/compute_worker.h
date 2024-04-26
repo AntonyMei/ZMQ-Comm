@@ -299,33 +299,60 @@ std::tuple<int, int, bool> get_model_start_end_idx() {
 //  6. max_tokens: List[int]
 //  7. offsets: List[int]
 //  8. lengths: List[int]
-//  9. tensor: Torch.Tensor
-//      For first layer: type: torch.int32: token ids
-//      For other layers: type: torch.float16: activations
+//  9. is_token_tensor: List[bool], if true, find things in token tensor, o.w. find things in activation tensor
+//  10. token_tensor: Torch.Tensor (torch.int32), will be None if empty
+//  11. activation_tensor: Torch.Tensor (torch.FP16), will be None if empty
 std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<int>, std::vector<int>,
-        std::vector<int>, std::vector<int>, std::vector<int>, torch::Tensor> fetch_new_requests() {
+        std::vector<int>, std::vector<int>, std::vector<int>, std::vector<bool>, torch::Tensor,
+        torch::Tensor> fetch_new_requests() {
     // read all messages from the receiver
     std::vector<MessageData> messages = recv_compute_queue.pop_all();
 
     // process the messages into torch tensors
-    std::vector<torch::Tensor> tensors;
-    if (model_start_layer_index != 0) {
-        // in this case, the buffer contains the activations, which are in FP16
-        auto options = torch::TensorOptions().dtype(torch::kFloat16);
-        for (auto &message: messages) {
-            auto *data = static_cast<c10::Half *>(message.buffer_msg.data());
-            auto length = static_cast<int>(message.buffer_msg.size() / 2);
-            torch::Tensor tensor = torch::from_blob(data, {length}, options);
-            tensors.emplace_back(std::move(tensor));
-        }
-    } else {
-        // in this case, the buffer contains the token ids, which are ints
-        auto options = torch::TensorOptions().dtype(torch::kInt32);
-        for (auto &message: messages) {
+    std::vector<torch::Tensor> token_tensors;       // int32
+    std::vector<torch::Tensor> activation_tensors;  // float16
+    // location
+    std::vector<bool> is_token_tensor;
+    std::vector<int> offsets;
+    std::vector<int> lengths;
+    int token_offset = 0;
+    int activation_offset = 0;
+    // parse
+    for (auto &message: messages) {
+        // get the first layer
+        int current_stage = message.header.current_stage;
+        int start_layer_idx = message.header.start_layer_idx[current_stage];
+
+        if (start_layer_idx == 0) {
+            // buffer contains tokens, should be int32
+            auto options = torch::TensorOptions().dtype(torch::kInt32);
             auto *data = static_cast<int *>(message.buffer_msg.data());  // use int as the type
             auto length = static_cast<int>(message.buffer_msg.size() / sizeof(int));
             torch::Tensor tensor = torch::from_blob(data, {length}, options);
-            tensors.emplace_back(std::move(tensor));
+
+            // give location
+            is_token_tensor.emplace_back(true);
+            offsets.emplace_back(token_offset);
+            lengths.emplace_back(tensor.numel());
+            token_offset += (int) tensor.numel();
+
+            // save the tensor
+            token_tensors.emplace_back(std::move(tensor));
+        } else {
+            // buffer contains activations, should be fp16
+            auto options = torch::TensorOptions().dtype(torch::kFloat16);
+            auto *data = static_cast<c10::Half *>(message.buffer_msg.data());
+            auto length = static_cast<int>(message.buffer_msg.size() / 2);
+            torch::Tensor tensor = torch::from_blob(data, {length}, options);
+
+            // give location
+            is_token_tensor.emplace_back(false);
+            offsets.emplace_back(activation_offset);
+            lengths.emplace_back(tensor.numel());
+            activation_offset += (int) tensor.numel();
+
+            // save the tensor
+            activation_tensors.emplace_back(std::move(tensor));
         }
     }
 
@@ -352,29 +379,25 @@ std::tuple<std::vector<int>, std::vector<bool>, std::vector<int>, std::vector<in
         requests_on_the_fly[request_id] = std::make_shared<MessageData>(std::move(message));
     }
 
-    // get the offsets of each tensor
-    std::vector<int> offsets;
-    std::vector<int> lengths;
-    int offset = 0;
-    for (const auto &tensor: tensors) {
-        offsets.emplace_back(offset);
-        lengths.emplace_back(tensor.numel());
-        offset += (int) tensor.numel();
-    }
-
     // move the result tensor to GPU
     // if no tensors, return an empty tensor (on cpu)
-    torch::Tensor result_tensor_gpu;
-    if (!tensors.empty()) {
-        torch::Tensor result_tensor = torch::cat(tensors, 0);
+    torch::Tensor token_tensor_gpu;
+    if (!token_tensors.empty()) {
+        torch::Tensor cat_token_tensors = torch::cat(token_tensors, 0);
         torch::Device device(torch::kCUDA, 0);
-        result_tensor_gpu = result_tensor.to(device);
+        token_tensor_gpu = cat_token_tensors.to(device);
+    }
+    torch::Tensor activation_tensor_gpu;
+    if (!activation_tensors.empty()) {
+        torch::Tensor cat_activation_tensors = torch::cat(activation_tensors, 0);
+        torch::Device device(torch::kCUDA, 0);
+        activation_tensor_gpu = cat_activation_tensors.to(device);
     }
 
     // return the tensors
     return {std::move(request_ids), std::move(is_prompt), std::move(start_layer_idx), std::move(end_layer_idx),
             std::move(num_tokens), std::move(max_tokens), std::move(offsets), std::move(lengths),
-            std::move(result_tensor_gpu)};
+            std::move(is_token_tensor), std::move(token_tensor_gpu), std::move(activation_tensor_gpu)};
 }
 
 
