@@ -492,7 +492,7 @@ void tensor_gc() {
         while (!hold_time.empty() && current_time - hold_time.front() > 10 * 1000 * 1000) {
             output_tensors_on_hold.pop_front();
             hold_time.pop_front();
-            log("GC-Tensor", "Cleaned up a tensor!");
+            // log("GC-Tensor", "Cleaned up a tensor!");
         }
 
         // sleep for a while
